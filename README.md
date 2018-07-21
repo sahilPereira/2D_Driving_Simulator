@@ -1,2 +1,2 @@
-# 2D_Driving_Simulator
+# 2d-driving-simulator
 Simulator for autonomous driver model testing
