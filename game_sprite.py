@@ -3,6 +3,7 @@ import pygame
 from math import tan, radians, degrees, copysign, ceil
 from pygame.math import Vector2
 import stackelbergPlayer as SCP
+from random import randrange
 
 WHITE = (255, 255, 255)
 GREEN = (0, 255, 0)
@@ -28,6 +29,7 @@ LANE_1_C = (LANE_WIDTH * 1 - (LANE_WIDTH/2))/ppu
 LANE_2_C = (LANE_WIDTH * 2 - (LANE_WIDTH/2))/ppu
 LANE_3_C = (LANE_WIDTH * 3 - (LANE_WIDTH/2))/ppu
 
+NEW_LANES = [LANE_1_C, LANE_2_C, LANE_3_C]
 
 # TEST:
 lane_change_time = 0.0
@@ -392,7 +394,7 @@ class Game:
         car.left_mode = True
         car.right_mode = False
 
-    def run(self, cars_list, obstacle_list, is_Stackelberg=False):
+    def run(self, cars_list, obstacle_list, is_Stackelberg=False, inf_obstacles=False):
         # current_dir = os.path.dirname(os.path.abspath(__file__))
         # image_path = os.path.join(current_dir, "car.png")
         # car_image = pygame.image.load(image_path)
@@ -409,10 +411,20 @@ class Game:
         # car = Car(x=10, y=9.375, vel_x=10.0, vel_y=0.0, lane_id=3)
         car = agents[0]
 
+        # TODO: remove after testing
+        test_counter = 0.0
+        sprite_to_remove = None
+
+        obstacle_lanes = []
         all_coming_cars = pygame.sprite.Group()
         for data in obstacle_list:
             all_coming_cars.add(Obstacle(id=data['id'], x=data['x'], y=data['y'], vel_x=data['vel_x'], vel_y=0.0, lane_id=data['lane_id'], color=data['color']))
+            obstacle_lanes.append(data['lane_id'])
         # obstacle_1 = Obstacle(x=30, y=2, vel_x=10.0, vel_y=0.0, color=GREY)
+
+        for idx, obstacle in enumerate(all_coming_cars):
+            if obstacle.lane_id == 2:
+                sprite_to_remove = obstacle
 
         #This will be a list that will contain all the sprites we intend to use in our game.
         # all_sprites_list = pygame.sprite.Group()
@@ -456,6 +468,30 @@ class Game:
             car.update(dt)
             all_coming_cars.update(dt, car)
 
+            # TODO: testing
+            # test_counter += dt
+            # if test_counter >= 5.0 and sprite_to_remove:
+            #     all_coming_cars.remove(sprite_to_remove)
+                # sprite_to_remove = None
+
+            # generate new obstacles
+            for obstacle in all_coming_cars:
+                if obstacle.position.x < -CAR_WIDTH/32:
+                    # remove old obstacle
+                    all_coming_cars.remove(obstacle)
+                    # obstacle_lanes.remove(obstacle.lane_id)
+
+                    # add new obstacle
+                    rand_pos_x = float(randrange(70, 80))
+                    rand_pos_y = NEW_LANES[obstacle.lane_id-1]
+                    rand_vel_x = float(randrange(5, 15))
+                    rand_lane_id = obstacle.lane_id
+                    all_coming_cars.add(Obstacle(id=randrange(1,100), x=rand_pos_x, y=rand_pos_y, vel_x=rand_vel_x, vel_y=0.0, lane_id=rand_lane_id, color=YELLOW))
+                    # obstacle_lanes.append(data['lane_id'])
+
+
+
+
             # Drawing
             self.screen.fill((0, 0, 0))
             
@@ -496,9 +532,9 @@ if __name__ == '__main__':
     # print(round(ceil(15.0003),3))
     # print(is_real)
 
-    obstacle_1 = {'id':0, 'x':30, 'y':LANE_1_C, 'vel_x':10.0, 'lane_id':1, 'color':YELLOW}
-    obstacle_2 = {'id':1, 'x':25, 'y':LANE_2_C, 'vel_x':12.5, 'lane_id':2, 'color':YELLOW}
-    obstacle_3 = {'id':2, 'x':40, 'y':LANE_3_C, 'vel_x':15.0, 'lane_id':3, 'color':YELLOW}
+    obstacle_1 = {'id':0, 'x':20, 'y':LANE_1_C, 'vel_x':11.0, 'lane_id':1, 'color':YELLOW}
+    obstacle_2 = {'id':1, 'x':25, 'y':LANE_2_C, 'vel_x':10.5, 'lane_id':2, 'color':YELLOW}
+    obstacle_3 = {'id':2, 'x':40, 'y':LANE_3_C, 'vel_x':10.0, 'lane_id':3, 'color':YELLOW}
     obstacle_list = [obstacle_1, obstacle_2, obstacle_3]
 
     car_1 = {'id':0, 'x':20, 'y':LANE_2_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':2}
@@ -508,4 +544,4 @@ if __name__ == '__main__':
     # game.run(cars_list, obstacle_list, True)
 
     # run a human controlled game
-    game.run(cars_list, obstacle_list, True)
+    game.run(cars_list, obstacle_list, True, True)
