@@ -12,6 +12,8 @@ class Action(Enum):
     LEFT = 0
     RIGHT = 1
     MAINTAIN = 2
+    ACCELERATE = 3
+    DECELERATE = 4
 
 class StackelbergPlayer():
     def __init__(self):
@@ -51,6 +53,24 @@ class StackelbergPlayer():
 
     # TODO: start with the simple positive utility
     def positiveUtility(self, ego, intended_lane, all_obstacles):
+        # max visible distance
+        ideal_velocity = ego.max_velocity
+        for obstacle in all_obstacles:
+            if obstacle.lane_id == intended_lane:
+                dx = obstacle.position.x - ego.position.x
+                # only consider vehicles ahead of ego vehicle
+                if dx > 0:
+                    stopping_dist = self.stoppingDist(ego)
+                    tmp_val = dx + ego.velocity.x + min(dx - stopping_dist, 0)
+                    ideal_velocity = min(tmp_val, VISIBLE_DIST + ideal_velocity)
+        return ideal_velocity
+
+    # compute stopping distance for ego vehicle
+    def stoppingDist(self, ego):
+        return 0.5*(ego.velocity.x ** 2)/ego.max_acceleration
+
+    # TODO: start with the simple positive utility
+    def positiveUtility_old(self, ego, intended_lane, all_obstacles):
         # max visible distance
         obstacle_dist = VISIBLE_DIST
         for obstacle in all_obstacles:

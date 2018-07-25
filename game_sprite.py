@@ -328,7 +328,11 @@ class Game:
         # Step 3: select actions for all players from step 2 sequentially
         selected_action = controller.selectAction(leader, all_obstacles)
 
-        if (selected_action == SCP.Action.MAINTAIN) and not leader.do_maintain:
+        if (selected_action == SCP.Action.ACCELERATE) and not leader.do_accelerate:
+            self.accelerate(leader)
+        elif (selected_action == SCP.Action.DECELERATE) and not leader.do_decelerate:
+            self.decelerate(leader)
+        elif (selected_action == SCP.Action.MAINTAIN) and not leader.do_maintain:
             self.maintain(leader, all_obstacles)
 
         leader.acceleration = max(-leader.max_acceleration, min(leader.acceleration, leader.max_acceleration))
@@ -356,7 +360,7 @@ class Game:
 
         obstacle_velx = car.velocity.x
         for obstacle in all_obstacles:
-            if obstacle.lane_id == car.lane_id:
+            if (obstacle.lane_id == car.lane_id) and (obstacle.position.x > car.position.x):
                 obstacle_velx = obstacle.velocity.x
         car.setCruiseVel(obstacle_velx)
         car.do_maintain = True
@@ -497,7 +501,7 @@ if __name__ == '__main__':
     obstacle_3 = {'id':2, 'x':40, 'y':LANE_3_C, 'vel_x':15.0, 'lane_id':3, 'color':YELLOW}
     obstacle_list = [obstacle_1, obstacle_2, obstacle_3]
 
-    car_1 = {'id':0, 'x':10, 'y':LANE_2_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':2}
+    car_1 = {'id':0, 'x':20, 'y':LANE_2_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':2}
     cars_list = [car_1]
 
     # run a Stackelberg game
