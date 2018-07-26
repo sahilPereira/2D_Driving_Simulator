@@ -18,8 +18,8 @@ class Action(Enum):
     DECELERATE = 4
 
 class StackelbergPlayer():
-    def __init__(self):
-        pass
+    def __init__(self, car_width):
+        self.car_width = car_width/64
 
     def selectAction(self, leader, all_obstacles):
         current_lane = leader.lane_id
@@ -72,17 +72,24 @@ class StackelbergPlayer():
         # max visible distance
         # ideal_velocity = VISIBLE_DIST + ego.max_velocity
         ideal_velocity = ego.max_velocity
+
         for obstacle in all_obstacles:
             if obstacle.lane_id == intended_lane:
-                dx = (obstacle.position.x - (obstacle.rect[2]/64)) - (ego.position.x + (ego.rect[2]/64)) - COMFORT_LVL
-                # dx = obstacle.position.x - ego.position.x
+                dx = obstacle.position.x - ego.position.x
+                # dx = (obstacle.position.x - (obstacle.rect[2]/64)) - (ego.position.x + (ego.rect[2]/64)) - COMFORT_LVL
+
                 # only consider vehicles ahead of ego vehicle
-                if dx > 0:
+                if dx >= 0:
+                    # calculate actual difference between cars
+                    dx = abs(obstacle.position.x - ego.position.x) - (ego.rect[2]/32) - self.car_width
+
                     stopping_dist = self.stoppingDist(ego, intended_velocity)
-                    tmp_val = dx + intended_velocity + min(dx - stopping_dist, 0)
+                    tmp_val = intended_velocity + min(dx - stopping_dist, 0)
+                    # tmp_val = dx + intended_velocity + min(dx - stopping_dist, 0)
                     # tmp_val = dx + ego.velocity.x + min(dx - stopping_dist, 0)
-                    # ideal_velocity = min(tmp_val, ideal_velocity)
-                    ideal_velocity = min(tmp_val, VISIBLE_DIST + ideal_velocity)
+
+                    ideal_velocity = min(tmp_val, ideal_velocity)
+                    # ideal_velocity = min(tmp_val, VISIBLE_DIST + ideal_velocity)
         return ideal_velocity
 
     # compute stopping distance for ego vehicle
@@ -105,17 +112,23 @@ class StackelbergPlayer():
         neg_utility = 0.0
         for obstacle in all_obstacles:
             if obstacle.lane_id == intended_lane:
-                dx = (obstacle.position.x + (obstacle.rect[2]/64)) - (ego.position.x - (ego.rect[2]/64)) + COMFORT_LVL
-                # dx = obstacle.position.x - ego.position.x
+                dx = obstacle.position.x - ego.position.x
+                # dx = (obstacle.position.x + (obstacle.rect[2]/64)) - (ego.position.x - (ego.rect[2]/64)) + COMFORT_LVL
+
                 # only consider vehicles behind of ego vehicle
-                if dx < 0:
+                if dx <= 0:
+                    dx = abs(obstacle.position.x - ego.position.x) - (ego.rect[2]/32) - self.car_width
+
                     dv = obstacle.velocity.x - intended_velocity    
                     # dv = obstacle.velocity.x - ego.velocity.x
+
                     time_lane_change = self.timeToChangeLane(ego, intended_velocity)
                     dist_lane_change = intended_velocity * time_lane_change
                     # dist_lane_change = ego.velocity.x * time_lane_change
+
                     # Negative utility formula
-                    neg_utility = abs(dx) - dv*time_lane_change - dist_lane_change
+                    neg_utility = dx - dv*time_lane_change - dist_lane_change
+                    # neg_utility = abs(dx) - dv*time_lane_change - dist_lane_change
         return neg_utility
 
     # Calculate lateral velocity assuming max steering for vehicle to get time to change lane

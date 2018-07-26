@@ -433,7 +433,7 @@ class Game:
         # all_sprites_list.add(obstacle_1)
 
         # Stackelberg controller
-        s_controller = SCP.StackelbergPlayer() if is_Stackelberg else None
+        s_controller = SCP.StackelbergPlayer(CAR_WIDTH) if is_Stackelberg else None
 
         # action timer
         action_timer = 0.0
@@ -475,22 +475,20 @@ class Game:
                 # sprite_to_remove = None
 
             # generate new obstacles
-            for obstacle in all_coming_cars:
-                if obstacle.position.x < -CAR_WIDTH/32:
-                    # remove old obstacle
-                    all_coming_cars.remove(obstacle)
-                    # obstacle_lanes.remove(obstacle.lane_id)
+            if inf_obstacles:
+                for obstacle in all_coming_cars:
+                    if obstacle.position.x < -CAR_WIDTH/32:
+                        # remove old obstacle
+                        all_coming_cars.remove(obstacle)
+                        # obstacle_lanes.remove(obstacle.lane_id)
 
-                    # add new obstacle
-                    rand_pos_x = float(randrange(70, 80))
-                    rand_pos_y = NEW_LANES[obstacle.lane_id-1]
-                    rand_vel_x = float(randrange(5, 15))
-                    rand_lane_id = obstacle.lane_id
-                    all_coming_cars.add(Obstacle(id=randrange(1,100), x=rand_pos_x, y=rand_pos_y, vel_x=rand_vel_x, vel_y=0.0, lane_id=rand_lane_id, color=YELLOW))
-                    # obstacle_lanes.append(data['lane_id'])
-
-
-
+                        # add new obstacle
+                        rand_pos_x = float(randrange(70, 80))
+                        rand_pos_y = NEW_LANES[obstacle.lane_id-1]
+                        rand_vel_x = float(randrange(5, 15))
+                        rand_lane_id = obstacle.lane_id
+                        all_coming_cars.add(Obstacle(id=randrange(1,100), x=rand_pos_x, y=rand_pos_y, vel_x=rand_vel_x, vel_y=0.0, lane_id=rand_lane_id, color=YELLOW))
+                        # obstacle_lanes.append(data['lane_id'])
 
             # Drawing
             self.screen.fill((0, 0, 0))
