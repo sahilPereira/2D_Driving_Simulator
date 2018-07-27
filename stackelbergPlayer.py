@@ -22,6 +22,10 @@ class StackelbergPlayer():
         self.car_width = car_width/64
 
     def selectAction(self, leader, all_obstacles):
+        selected_action = self.getActionUtilSet(leader, all_obstacles)[0][0]
+        return selected_action
+
+    def getActionUtilSet(self, leader, all_obstacles):
         current_lane = leader.lane_id
         all_actions = list(Action)
 
@@ -35,6 +39,7 @@ class StackelbergPlayer():
 
         best_utility = 0.0
         selected_action = None
+        action_util_dict = {}
         for action in all_actions:
             # update the intended lane
             intended_lane = current_lane
@@ -50,12 +55,54 @@ class StackelbergPlayer():
             current_utility += self.negativeUtility(leader, intended_lane, intended_velocity, all_obstacles)
             if current_utility > best_utility:
                 best_utility = current_utility
-                selected_action = action        
-        
-        return selected_action
+                selected_action = action
 
-    def pickPlayers(self):
-        return 0
+            # save action and corresponding utility
+            action_util_dict.update({action:current_utility})
+
+        action_util_sorted = sorted(action_util_dict.items(), key=lambda kv: kv[1], reverse=True)
+        # print(action_util_sorted[0][1])
+        
+        return action_util_sorted
+
+    # TODO: refactor this method
+    def pickPlayers(self, ego, all_agents, all_obstacles):
+        players = [ego]
+
+        # by default it is the middle lane
+        adversary_lane = 2
+        
+        # need to update adversary lane if leader is already in the middle lane
+        if ego.lane_id == 2:
+            action_util_set = self.getActionUtilSet(ego, all_obstacles)
+            for action_tuple in action_util_set:
+                if action_tuple[0] == Action.LEFT:
+                    adversary_lane -= 1
+                    break
+                elif action_tuple[0] == Action.RIGHT:
+                    adversary_lane += 1
+                    break
+
+        back_agent, side_agent = None, None
+        for agent in all_agents:
+            if agent != ego:
+                if agent.lane_id == ego.lane_id:
+                    if agent.position.x < ego.position.x:
+                        if not back_agent:
+                            back_agent = agent
+                        elif agent.position.x > back_agent.position.x:
+                            back_agent = agent
+                elif agent.lane_id == adversary_lane:
+                    if agent.position.x < ego.position.x:
+                        if not side_agent:
+                            side_agent = agent
+                        elif agent.position.x > side_agent.position.x:
+                            side_agent = agent
+        if back_agent:
+            players.append(back_agent)
+        if side_agent:
+            players.append(side_agent)
+        return players
 
     def updatedVelocity(self, ego, action):
         intended_velocity = ego.velocity.x

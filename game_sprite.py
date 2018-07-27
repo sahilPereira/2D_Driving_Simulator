@@ -310,11 +310,11 @@ class Game:
 
         car.steering = max(-car.max_steering, min(car.steering, car.max_steering))
 
-    def stackelbergControl(self, controller, all_car, all_obstacles):
+    def stackelbergControl(self, controller, all_agents, all_obstacles):
         order_of_update = []
         # Step 1: select Stackelberg leader
         leader = None
-        for idx, auto in enumerate(all_car):
+        for idx, auto in enumerate(all_agents):
             if leader is None:
                 leader = auto
                 order_of_update.append(idx)
@@ -325,7 +325,8 @@ class Game:
                     order_of_update[0] = idx
 
         # Step 2: select up to 3 players involved in game
-        # Skipped for now
+        players = controller.pickPlayers(leader, all_agents, all_obstacles)
+        # print(players)
 
         # Step 3: select actions for all players from step 2 sequentially
         selected_action = controller.selectAction(leader, all_obstacles)
