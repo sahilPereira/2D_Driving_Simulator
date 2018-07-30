@@ -9,6 +9,7 @@ VISIBLE_DIST = 1900.0 # pixels
 LANE_DIFF = 120.0 # 120 pixels between centers of lanes
 ACTION_HORIZON = 0.25
 COMFORT_LVL = 0.0
+NUM_PLAYERS = 3
 
 class Action(Enum):
     LEFT = 0
@@ -20,6 +21,7 @@ class Action(Enum):
 class StackelbergPlayer():
     def __init__(self, car_width):
         self.car_width = car_width/64
+        self.players = [set() for x in range(NUM_PLAYERS)]
 
     def selectAction(self, leader, all_obstacles):
         selected_action = self.getActionUtilSet(leader, all_obstacles)[0][0]
@@ -38,7 +40,8 @@ class StackelbergPlayer():
             del all_actions[Action.RIGHT.value]
 
         best_utility = 0.0
-        selected_action = None
+        selected_action = Action.MAINTAIN
+        # selected_action = None
         action_util_dict = {}
         for action in all_actions:
             # update the intended lane
@@ -64,6 +67,31 @@ class StackelbergPlayer():
         # print(action_util_sorted[0][1])
         
         return action_util_sorted
+        # return selected_action
+
+    # select leaders to make a decision at this instance, and followers for next iteration
+    def pickLeadersAndFollowers(self, all_agents, all_obstacles):
+        # 1. rank all players based on position on road
+        sorted_agents = self.sortByPosition(all_agents)
+        
+        # 2. select top agent as leader and add to leader/follower list
+        # players = [set() for x in range(NUM_PLAYERS)]
+        while sorted_agents:
+            leader = sorted_agents.pop(0)
+
+            # get the followers for this leader
+            # TODO: need to sort these players otherwise we will mix follower 1 and 2
+            all_players = self.pickPlayers(leader, all_agents, all_obstacles)
+
+            # 3. add the leaders and followers to the players list of sets
+            for idx, agent in enumerate(all_players):
+                self.players[idx].add(agent)
+
+            # 4. remove all these from the original sorted list
+            sorted_agents = [agent for agent in sorted_agents if agent not in all_players]        
+        
+        # return the leaders
+        return self.players[0]
 
     # TODO: refactor this method
     def pickPlayers(self, ego, all_agents, all_obstacles):
@@ -113,6 +141,11 @@ class StackelbergPlayer():
         elif action == Action.DECELERATE:
             intended_velocity -= 1*ACTION_HORIZON
         return max(0.0, min(intended_velocity, ego.max_velocity))
+
+    # sort vehicles by longitudinal position (decreasing order)
+    def sortByPosition(self, all_agents):
+        sorted_agents = sorted(all_agents, key=lambda x: x.position.x, reverse=True)
+        return sorted_agents
 
     # TODO: start with the simple positive utility
     def positiveUtility(self, ego, intended_lane, intended_velocity, all_obstacles):

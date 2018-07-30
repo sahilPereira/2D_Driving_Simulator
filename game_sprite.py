@@ -311,6 +311,15 @@ class Game:
         car.steering = max(-car.max_steering, min(car.steering, car.max_steering))
 
     def stackelbergControl(self, controller, all_agents, all_obstacles):
+
+        # 1. select players to execute action at this instance
+        # players = controller.pickLeadersAndFollowers(all_agents, all_obstacles)
+
+        # 2. iterate over the set of players and execute their actions
+        # for leader in players:
+        #     # use logic from step 3 onwards...
+        #     pass
+
         order_of_update = []
         # Step 1: select Stackelberg leader
         leader = None
@@ -330,6 +339,7 @@ class Game:
 
         # Step 3: select actions for all players from step 2 sequentially
         selected_action = controller.selectAction(leader, all_obstacles)
+        # selected_action = controller.getActionUtilSet(leader, all_obstacles)
 
         if (selected_action == SCP.Action.ACCELERATE) and not leader.do_accelerate:
             self.accelerate(leader)
@@ -531,8 +541,8 @@ if __name__ == '__main__':
     # print(round(ceil(15.0003),3))
     # print(is_real)
 
-    obstacle_1 = {'id':0, 'x':20, 'y':LANE_1_C, 'vel_x':11.0, 'lane_id':1, 'color':YELLOW}
-    obstacle_2 = {'id':1, 'x':25, 'y':LANE_2_C, 'vel_x':10.5, 'lane_id':2, 'color':YELLOW}
+    obstacle_1 = {'id':0, 'x':20, 'y':LANE_1_C, 'vel_x':13.0, 'lane_id':1, 'color':YELLOW}
+    obstacle_2 = {'id':1, 'x':25, 'y':LANE_2_C, 'vel_x':12.0, 'lane_id':2, 'color':YELLOW}
     obstacle_3 = {'id':2, 'x':40, 'y':LANE_3_C, 'vel_x':10.0, 'lane_id':3, 'color':YELLOW}
     obstacle_list = [obstacle_1, obstacle_2, obstacle_3]
 
