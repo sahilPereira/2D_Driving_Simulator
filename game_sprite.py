@@ -76,7 +76,7 @@ class Car(pygame.sprite.Sprite):
         self.left_mode, self.right_mode, self.do_accelerate, self.do_decelerate, self.do_maintain = False, False, False, False, False
         self.cruise_vel = 0.0
 
-    def update(self, dt):
+    def update(self, dt, s_leader):
         
         if self.do_accelerate:
             self.accelerate(dt)
@@ -104,9 +104,14 @@ class Car(pygame.sprite.Sprite):
             angular_velocity = 0
 
         # DEBUG: removed angle from car
-        # self.position += self.velocity.rotate(-self.angle) * dt
+        # TODO: added to make agent positions relative to eachother
+        self.position += self.velocity.rotate(-self.angle) * dt
         self.position.y -= degrees(angular_velocity) * dt * dt
-        self.position.x = 10
+
+        if self.id == s_leader.id:
+            self.position.x = 10
+        else:
+            self.position.x -= s_leader.velocity.x * dt
 
         # prevent the car from leaving the road
         if self.position.y < int((CAR_HEIGHT/2)/ppu):
@@ -276,7 +281,8 @@ class Game:
 
     def displayPos(self, position):
         font = pygame.font.SysFont(None, 25)
-        text = font.render("X: "+str(position.x)+", Y: "+str(position.y), True, WHITE)
+        # text = font.render("X: "+str(position.x)+", Y: "+str(position.y), True, WHITE)
+        text = font.render("Collisions: "+str(position), True, WHITE)
         self.screen.blit(text, (0,50))
 
     def displayAction(self, action):
@@ -312,35 +318,20 @@ class Game:
 
     def stackelbergControl(self, controller, all_agents, all_obstacles):
 
-        # 1. select players to execute action at this instance
-        # players = controller.pickLeadersAndFollowers(all_agents, all_obstacles)
+        # Step 1. select players to execute action at this instance
+        players = controller.pickLeadersAndFollowers(all_agents, all_obstacles)
 
-        # 2. iterate over the set of players and execute their actions
-        # for leader in players:
-        #     # use logic from step 3 onwards...
-        #     pass
+        # Step 2. iterate over the set of players and execute their actions
+        for leader in players:
+            # Step 3: select actions for all players from step 2 sequentially
+            selected_action = controller.selectAction(leader, all_obstacles)
+            self.executeAction(selected_action, leader, all_obstacles)
 
-        order_of_update = []
-        # Step 1: select Stackelberg leader
-        leader = None
-        for idx, auto in enumerate(all_agents):
-            if leader is None:
-                leader = auto
-                order_of_update.append(idx)
-            else:
-                # leader is ahead of the other players
-                if auto.position.x > leader.position.x:
-                    leader = auto
-                    order_of_update[0] = idx
+        # Note that every player acts as a leader when selecting their actions
+        return selected_action
 
-        # Step 2: select up to 3 players involved in game
-        players = controller.pickPlayers(leader, all_agents, all_obstacles)
-        # print(players)
-
-        # Step 3: select actions for all players from step 2 sequentially
-        selected_action = controller.selectAction(leader, all_obstacles)
-        # selected_action = controller.getActionUtilSet(leader, all_obstacles)
-
+    # execute the given action for the specified leader
+    def executeAction(self, selected_action, leader, all_obstacles):
         if (selected_action == SCP.Action.ACCELERATE) and not leader.do_accelerate:
             self.accelerate(leader)
         elif (selected_action == SCP.Action.DECELERATE) and not leader.do_decelerate:
@@ -356,9 +347,8 @@ class Game:
             self.turn_left(leader)
 
         leader.steering = max(-leader.max_steering, min(leader.steering, leader.max_steering))
-
-        # Note that every player acts as a leader when selecting their actions
-        return selected_action
+        
+        return
 
     # these booleans are required to ensure the action is executed over a period of time
     def accelerate(self, car):
@@ -416,21 +406,31 @@ class Game:
 
         num_collisions = 0
 
-        agents = []
+        all_agents = pygame.sprite.Group()
+        all_obstacles = pygame.sprite.Group()
+        reference_car = None
         for data in cars_list:
-            agents.append(Car(id=data['id'], x=data['x'], y=data['y'], vel_x=data['vel_x'], vel_y=data['vel_y'], lane_id=data['lane_id']))
-        # car = Car(x=10, y=9.375, vel_x=10.0, vel_y=0.0, lane_id=3)
-        car = agents[0]
+            new_car = Car(id=data['id'], x=data['x'], y=data['y'], vel_x=data['vel_x'], vel_y=data['vel_y'], lane_id=data['lane_id'])
+            all_agents.add(new_car)
+            all_obstacles.add(new_car)
+
+            if not reference_car:
+                reference_car = new_car
+
+        # car = all_agents[0]
 
         # TODO: remove after testing
         test_counter = 0.0
         sprite_to_remove = None
 
-        obstacle_lanes = []
+        # obstacle_lanes = []
         all_coming_cars = pygame.sprite.Group()
         for data in obstacle_list:
-            all_coming_cars.add(Obstacle(id=data['id'], x=data['x'], y=data['y'], vel_x=data['vel_x'], vel_y=0.0, lane_id=data['lane_id'], color=data['color']))
-            obstacle_lanes.append(data['lane_id'])
+            new_obstacle = Obstacle(id=data['id'], x=data['x'], y=data['y'], vel_x=data['vel_x'], vel_y=0.0, lane_id=data['lane_id'], color=data['color'])
+            all_coming_cars.add(new_obstacle)
+            all_obstacles.add(new_obstacle)
+            
+            # obstacle_lanes.append(data['lane_id'])
         # obstacle_1 = Obstacle(x=30, y=2, vel_x=10.0, vel_y=0.0, color=GREY)
 
         for idx, obstacle in enumerate(all_coming_cars):
@@ -461,23 +461,26 @@ class Game:
                     self.exit = True
 
             if not is_Stackelberg:
-                self.manualControl(car, all_coming_cars)
+                self.manualControl(reference_car, all_obstacles)
             else:
                 if action_timer >= ACTION_RESET_TIME:
-                    selected_action = self.stackelbergControl(s_controller, [car], all_coming_cars)
+                    selected_action = self.stackelbergControl(s_controller, all_agents, all_obstacles)
                     current_action = selected_action.name
                     action_timer = 0.0
 
-            # Logic
-            car_collision_list = pygame.sprite.spritecollide(car,all_coming_cars,False)
-            for accident in car_collision_list:
-                num_collisions += 1
-                #End Of Game
-                # self.exit = True
+            # collision check
+            for agent in all_agents:
+                car_collision_list = pygame.sprite.spritecollide(agent,all_coming_cars,False)
+                num_collisions += len(car_collision_list)
+                # for accident in car_collision_list:
+                #     num_collisions += 1
+                    #End Of Game
+                    # self.exit = True
 
             # update all sprites
-            car.update(dt)
-            all_coming_cars.update(dt, car)
+            # car.update(dt)
+            all_agents.update(dt, reference_car)
+            all_coming_cars.update(dt, reference_car)
 
             # TODO: testing
             # test_counter += dt
@@ -491,6 +494,7 @@ class Game:
                     if obstacle.position.x < -CAR_WIDTH/32:
                         # remove old obstacle
                         all_coming_cars.remove(obstacle)
+                        all_obstacles.remove(obstacle)
                         # obstacle_lanes.remove(obstacle.lane_id)
 
                         # add new obstacle
@@ -498,8 +502,10 @@ class Game:
                         rand_pos_y = NEW_LANES[obstacle.lane_id-1]
                         rand_vel_x = float(randrange(5, 15))
                         rand_lane_id = obstacle.lane_id
-                        all_coming_cars.add(Obstacle(id=randrange(1,100), x=rand_pos_x, y=rand_pos_y, vel_x=rand_vel_x, vel_y=0.0, lane_id=rand_lane_id, color=YELLOW))
-                        # obstacle_lanes.append(data['lane_id'])
+
+                        new_obstacle = Obstacle(id=randrange(1,100), x=rand_pos_x, y=rand_pos_y, vel_x=rand_vel_x, vel_y=0.0, lane_id=rand_lane_id, color=YELLOW)
+                        all_coming_cars.add(new_obstacle)
+                        all_obstacles.add(new_obstacle)
 
             # Drawing
             self.screen.fill((0, 0, 0))
@@ -509,21 +515,21 @@ class Game:
             self.screen.blit(bkgd, (rel_x - bkgd.get_rect().width, 0))
             if rel_x < WIDTH:
                 self.screen.blit(bkgd, (rel_x, 0))
-            bkgd_x -= car.velocity.x
+            bkgd_x -= reference_car.velocity.x
             # bkgd_x -= 1
             # pygame.draw.line(self.screen, (255, 0, 0), (rel_x, 0), (rel_x, HEIGHT), 3)
 
             # update collision display count
-            new_lane_pos = (LANE_WIDTH * car.lane_id - (LANE_WIDTH/2))/ppu
-            self.displayScore(car.acceleration, car.velocity.x)
+            new_lane_pos = (LANE_WIDTH * reference_car.lane_id - (LANE_WIDTH/2))/ppu
+            self.displayScore(reference_car.acceleration, reference_car.velocity.x)
 
             # update the agent sprites
-            self.updateSprites([car])
+            self.updateSprites(all_agents)
             # update obstacle sprites
             self.updateSprites(all_coming_cars)
 
             # display position of car
-            self.displayPos(car.position)
+            self.displayPos(num_collisions)
 
             # display selected action
             self.displayAction(current_action)
@@ -547,10 +553,34 @@ if __name__ == '__main__':
     obstacle_list = [obstacle_1, obstacle_2, obstacle_3]
 
     car_1 = {'id':0, 'x':20, 'y':LANE_2_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':2}
-    cars_list = [car_1]
+    car_2 = {'id':1, 'x':10, 'y':LANE_1_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':1}
+    cars_list = [car_1, car_2]
 
     # run a Stackelberg game
     # game.run(cars_list, obstacle_list, True)
+
+    # TODO: testing
+    # players = [set() for x in range(3)]
+    # for x in range(30):
+    #     players[x%3].add(x)
+
+    # for i in players:
+    #     print(i)
+
+    # del players[0]
+    # print("\n Deleted first set")
+    # print(players)
+    # players.append(set())
+    # print(players)
+    # for i in players:
+    #     print(i)
+
+    # t = None
+    # if t:
+    #     print("None")
+    # if not t:
+    #     print("Not none")
+
 
     # run a human controlled game
     game.run(cars_list, obstacle_list, True, True)

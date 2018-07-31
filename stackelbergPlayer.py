@@ -80,7 +80,6 @@ class StackelbergPlayer():
             leader = sorted_agents.pop(0)
 
             # get the followers for this leader
-            # TODO: need to sort these players otherwise we will mix follower 1 and 2
             all_players = self.pickPlayers(leader, all_agents, all_obstacles)
 
             # 3. add the leaders and followers to the players list of sets
@@ -90,8 +89,21 @@ class StackelbergPlayer():
             # 4. remove all these from the original sorted list
             sorted_agents = [agent for agent in sorted_agents if agent not in all_players]        
         
+        leader_list = self.players[0]
+        # update players for next turn
+        self.updatePlayersList()
+
         # return the leaders
-        return self.players[0]
+        return leader_list
+
+    # remove current leaders and make first followers the new leaders
+    # TODO: might want to make this into a queue datastructure
+    def updatePlayersList(self):
+        # remove current leaders
+        del self.players[0]
+        # add empty set for new followers
+        self.players.append(set())
+        return
 
     # TODO: refactor this method
     def pickPlayers(self, ego, all_agents, all_obstacles):
@@ -126,11 +138,11 @@ class StackelbergPlayer():
                             side_agent = agent
                         elif agent.position.x > side_agent.position.x:
                             side_agent = agent
-        if back_agent:
-            players.append(back_agent)
-        if side_agent:
-            players.append(side_agent)
-        return players
+        if back_agent: players.append(back_agent)
+        if side_agent: players.append(side_agent)
+
+        # return players sorted by their longitudinal position in decending order
+        return self.sortByPosition(players)
 
     def updatedVelocity(self, ego, action):
         intended_velocity = ego.velocity.x
@@ -154,6 +166,8 @@ class StackelbergPlayer():
         ideal_velocity = ego.max_velocity
 
         for obstacle in all_obstacles:
+            if obstacle == ego:
+                continue
             if obstacle.lane_id == intended_lane:
                 dx = obstacle.position.x - ego.position.x
                 # dx = (obstacle.position.x - (obstacle.rect[2]/64)) - (ego.position.x + (ego.rect[2]/64)) - COMFORT_LVL
@@ -189,8 +203,10 @@ class StackelbergPlayer():
         return obstacle_dist
 
     def negativeUtility(self, ego, intended_lane, intended_velocity, all_obstacles):
-        neg_utility = 0.0
+        neg_utility = None
         for obstacle in all_obstacles:
+            if obstacle == ego:
+                continue
             if obstacle.lane_id == intended_lane:
                 dx = obstacle.position.x - ego.position.x
                 # dx = (obstacle.position.x + (obstacle.rect[2]/64)) - (ego.position.x - (ego.rect[2]/64)) + COMFORT_LVL
@@ -207,8 +223,14 @@ class StackelbergPlayer():
                     # dist_lane_change = ego.velocity.x * time_lane_change
 
                     # Negative utility formula
-                    neg_utility = dx - dv*time_lane_change - dist_lane_change
+                    if not neg_utility:
+                        neg_utility = dx - dv*time_lane_change - dist_lane_change
+                    else:
+                        neg_utility = min(dx - dv*time_lane_change - dist_lane_change, neg_utility)
                     # neg_utility = abs(dx) - dv*time_lane_change - dist_lane_change
+
+        # set neg_utility to 0.0 if it was not assigned above
+        neg_utility = neg_utility if neg_utility else 0.0
         return neg_utility
 
     # Calculate lateral velocity assuming max steering for vehicle to get time to change lane
