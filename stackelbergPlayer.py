@@ -22,10 +22,16 @@ class StackelbergPlayer():
     def __init__(self, car_width):
         self.car_width = car_width/64
         self.players = [set() for x in range(NUM_PLAYERS)]
+        self.playerSets = {}
 
     def selectAction(self, leader, all_obstacles):
         selected_action = self.getActionUtilSet(leader, all_obstacles)[0][0]
         return selected_action
+
+    def selectStackelbergAction(self, leader, all_obstacles):
+
+        # Step 1.....
+        return 0
 
     def getActionUtilSet(self, leader, all_obstacles):
         current_lane = leader.lane_id
@@ -82,6 +88,9 @@ class StackelbergPlayer():
             # get the followers for this leader
             all_players = self.pickPlayers(leader, all_agents, all_obstacles)
 
+            # save player sets for each leader
+            self.playerSets[leader] = all_players
+
             # 3. add the leaders and followers to the players list of sets
             for idx, agent in enumerate(all_players):
                 self.players[idx].add(agent)
@@ -124,22 +133,28 @@ class StackelbergPlayer():
                     break
 
         back_agent, side_agent = None, None
-        for agent in all_agents:
+        for agent in all_obstacles:
             if agent != ego:
+                # agent in the same lane
                 if agent.lane_id == ego.lane_id:
+                    # agent has to be behind the ego vehicle
                     if agent.position.x < ego.position.x:
                         if not back_agent:
                             back_agent = agent
+                        # agent closest to the back
                         elif agent.position.x > back_agent.position.x:
                             back_agent = agent
+                # agent is in adjacent lane
                 elif agent.lane_id == adversary_lane:
+                    # agent has to be behind the ego vehicle
                     if agent.position.x < ego.position.x:
                         if not side_agent:
                             side_agent = agent
+                        # agent closest the to back side
                         elif agent.position.x > side_agent.position.x:
                             side_agent = agent
-        if back_agent: players.append(back_agent)
-        if side_agent: players.append(side_agent)
+        if back_agent in all_agents: players.append(back_agent)
+        if side_agent in all_agents: players.append(side_agent)
 
         # return players sorted by their longitudinal position in decending order
         return self.sortByPosition(players)

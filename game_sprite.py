@@ -320,6 +320,7 @@ class Game:
 
         # Step 1. select players to execute action at this instance
         players = controller.pickLeadersAndFollowers(all_agents, all_obstacles)
+        # print(len(players))
 
         # Step 2. iterate over the set of players and execute their actions
         for leader in players:
@@ -576,9 +577,9 @@ if __name__ == '__main__':
     #     print(i)
 
     # t = None
-    # if t:
+    # if t in players[0]:
     #     print("None")
-    # if not t:
+    # else:
     #     print("Not none")
 
 
