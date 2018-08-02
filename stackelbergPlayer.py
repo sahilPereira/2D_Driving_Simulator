@@ -1,5 +1,6 @@
 import os
 import pygame
+import copy
 from math import tan, radians, degrees, copysign
 from pygame.math import Vector2
 from enum import Enum
@@ -10,6 +11,7 @@ LANE_DIFF = 120.0 # 120 pixels between centers of lanes
 ACTION_HORIZON = 0.25
 COMFORT_LVL = 0.0
 NUM_PLAYERS = 3
+NUM_LANES = 3
 
 class Action(Enum):
     LEFT = 0
@@ -28,10 +30,144 @@ class StackelbergPlayer():
         selected_action = self.getActionUtilSet(leader, all_obstacles)[0][0]
         return selected_action
 
-    def selectStackelbergAction(self, leader, all_obstacles):
+    def selectStackelbergAction(self, leader, all_obstacles, reference_car):
 
-        # Step 1.....
-        return 0
+        # Step 1: get the players involved in this game
+        s_players = self.playerSets[leader]
+
+        # Step 2: create copies of all the obstacles so we can project their actions
+        mut_agents = []
+        all_obstacles_copy = []
+
+        for obst in all_obstacles:
+            all_obstacles_copy.append(obst.simCopy())
+
+        # all_obstacles_copy = copy.deepcopy(all_obstacles)
+
+        p_ids = []
+        for obstacle in all_obstacles:
+            if obstacle in s_players:
+                p_ids.append(obstacle.id)
+                # create a copy of the obstacle
+                # s_players_copy.append(obstacle.simCopy())
+
+        for obstacle_copy in all_obstacles_copy:
+            if obstacle_copy.id in p_ids:
+                # all_obstacles_copy.remove(obstacle_copy)
+                mut_agents.append(obstacle_copy)
+
+        # print("All obstacle_copy len: "+str(len(all_obstacles_copy)))
+        # print(all_obstacles_copy)
+
+        # make sure the players are sorted
+        mut_agents = self.sortByPosition(mut_agents)
+
+        # use these for simulating different actions
+        # mut_agents = []
+        # for p_copy in s_players_copy:
+        #     mut_agents.append(p_copy.simCopy())
+
+        # all_obstacles_copy.add(mut_agents)
+
+        p1_best, p2_best = 0.0, 0.0
+        p1_best_action, p2_best_action, p3_best_action = Action.MAINTAIN, Action.MAINTAIN, Action.MAINTAIN
+
+        all_actions = list(Action)
+
+        p_range = list(range(len(s_players)))
+        p_count = len(p_range)
+
+        p1_action_list = self.getActionSubset(all_actions, mut_agents[0])
+        if p_count > 1:
+            p2_action_list = self.getActionSubset(all_actions, mut_agents[1])
+
+        for p1_action in p1_action_list:
+            # TODO remove after testing
+            # print(p1_action.name)
+
+            # 1a. select and execute an action for player[0]
+            self.executeAction(p1_action, mut_agents[0], all_obstacles_copy)
+            mut_agents[0].update(ACTION_HORIZON, reference_car)
+
+            if p_count > 1:
+                # 1b. observe how followers react to selected action
+                for p2_action in p2_action_list:
+                    
+                    # 2a. select and execute an action for player[1]
+                    self.executeAction(p2_action, mut_agents[1], all_obstacles_copy)
+                    mut_agents[1].update(ACTION_HORIZON, reference_car)
+
+                    if p_count > 2:
+                        # 2b. observe how followers react to selected action
+                        # 3a. select and execute an action which maximizes player[2] utility
+                        p3_best_action = self.selectAction(mut_agents[2], all_obstacles_copy)
+                        self.executeAction(p3_best_action, mut_agents[2], all_obstacles_copy)
+                        mut_agents[2].update(ACTION_HORIZON, reference_car)
+
+                    # 2c. calculate utility value for current state
+                    p2_utility = self.positiveUtility(mut_agents[1], mut_agents[1].lane_id, mut_agents[1].velocity.x, all_obstacles_copy)
+                    p2_utility += self.negativeUtility(mut_agents[1], mut_agents[1].lane_id, mut_agents[1].velocity.x, all_obstacles_copy)
+
+                    # 2d. select action which results in the best utility value
+                    if p2_utility > p2_best:
+                        p2_best = p2_utility
+                        p2_best_action = p2_action
+
+                    # reset the state for agents 2 and 3
+                    self.resetState(mut_agents, s_players, all_obstacles_copy, p_range[1:])
+
+                # execute the best actions for player 2 and 3
+                self.executeAction(p2_best_action, mut_agents[1], all_obstacles_copy)
+                mut_agents[1].update(ACTION_HORIZON, reference_car)
+
+                if p_count > 2:
+                    self.executeAction(p3_best_action, mut_agents[2], all_obstacles_copy)
+                    mut_agents[2].update(ACTION_HORIZON, reference_car)
+
+            # 1c. calculate utility value for final state
+            # TODO remove after testing
+            # print(mut_agents[0].velocity.x)
+
+            p1_utility = self.positiveUtility(mut_agents[0], mut_agents[0].lane_id, mut_agents[0].velocity.x, all_obstacles_copy)
+            p1_utility += self.negativeUtility(mut_agents[0], mut_agents[0].lane_id, mut_agents[0].velocity.x, all_obstacles_copy)
+
+            # 1d. select the action which results in the best utility value
+            if p1_utility > p1_best:
+                p1_best = p1_utility
+                p1_best_action = p1_action
+
+            # reset the state for agents 1, 2 and 3
+            self.resetState(mut_agents, s_players, all_obstacles_copy, p_range)
+
+        # TODO: remove after testing
+        # ------------------------------------------------------------------
+        # if s_players_copy[0] == mut_agents[0]:
+        #     print("Leaders from copy and original are the same")
+        # else:
+        #     print("Copies are different")
+
+        # # s_players_copy[0].position.x = 1000
+        # same_pos = s_players_copy[0].position.x == mut_agents[0].position.x
+        # same_pos &= s_players_copy[0].velocity.x == mut_agents[0].velocity.x
+        # if same_pos:
+        #     print("Still linked by reference")
+        # else:
+        #     print("Not linked, an actual copy")
+        # ------------------------------------------------------------------
+
+        # print(p1_best_action.name)
+        return p1_best_action
+
+    def resetState(self, mut_agents, s_players, all_obstacles_copy, resetList):
+        # for obstacle_copy in mut_agents:
+        #     # if obstacle_copy.id in p_ids:
+
+        for i in resetList:
+            all_obstacles_copy.remove(mut_agents[i])
+            mut_agents[i] = s_players[i].simCopy()
+            all_obstacles_copy.append(mut_agents[i])
+
+        return
 
     def getActionUtilSet(self, leader, all_obstacles):
         current_lane = leader.lane_id
@@ -75,6 +211,15 @@ class StackelbergPlayer():
         return action_util_sorted
         # return selected_action
 
+    def getActionSubset(self, actions, ego):
+        # if in the left lane remove left action, same with right lane
+        actions_subset = actions.copy()
+        if ego.lane_id == 1:
+            actions_subset.remove(Action.LEFT)
+        elif ego.lane_id == 3:
+            actions_subset.remove(Action.RIGHT)
+        return actions_subset
+
     # select leaders to make a decision at this instance, and followers for next iteration
     def pickLeadersAndFollowers(self, all_agents, all_obstacles):
         # 1. rank all players based on position on road
@@ -89,7 +234,7 @@ class StackelbergPlayer():
             all_players = self.pickPlayers(leader, all_agents, all_obstacles)
 
             # save player sets for each leader
-            self.playerSets[leader] = all_players
+            # self.playerSets[leader] = all_players
 
             # 3. add the leaders and followers to the players list of sets
             for idx, agent in enumerate(all_players):
@@ -99,6 +244,13 @@ class StackelbergPlayer():
             sorted_agents = [agent for agent in sorted_agents if agent not in all_players]        
         
         leader_list = self.players[0]
+
+        # save player sets for each leader
+        for leader in leader_list:
+            # get the followers for this leader
+            all_players = self.pickPlayers(leader, all_agents, all_obstacles)
+            self.playerSets[leader] = all_players
+
         # update players for next turn
         self.updatePlayersList()
 
@@ -257,3 +409,70 @@ class StackelbergPlayer():
         # assuming center of lanes, we know the distance is 120 pixels
         lane_change_time = LANE_DIFF/degrees(angular_velocity)
         return lane_change_time
+
+    # TODO: really need to reuse these from Game(), need to understand inheritance in python
+    # execute the given action for the specified leader
+    def executeAction(self, selected_action, leader, all_obstacles):
+        if (selected_action == Action.ACCELERATE) and not leader.do_accelerate:
+            self.accelerate(leader)
+        elif (selected_action == Action.DECELERATE) and not leader.do_decelerate:
+            self.decelerate(leader)
+        elif (selected_action == Action.MAINTAIN) and not leader.do_maintain:
+            self.maintain(leader, all_obstacles)
+
+        leader.acceleration = max(-leader.max_acceleration, min(leader.acceleration, leader.max_acceleration))
+
+        if (selected_action == Action.RIGHT) and not leader.right_mode:
+            self.turn_right(leader)
+        elif (selected_action == Action.LEFT) and not leader.left_mode:
+            self.turn_left(leader)
+
+        leader.steering = max(-leader.max_steering, min(leader.steering, leader.max_steering))
+        
+        return
+
+    # these booleans are required to ensure the action is executed over a period of time
+    def accelerate(self, car):
+        car.do_accelerate = True
+        car.do_decelerate = False
+        car.do_maintain = False
+
+    def maintain(self, car, all_obstacles):
+        # only execute this function when required
+        if car.do_maintain:
+            return
+
+        forward_obstacle = None
+        for obstacle in all_obstacles:
+            if obstacle == car:
+                continue
+            # obstacle in the same lane
+            if obstacle.lane_id == car.lane_id:
+                # obstacle has to be ahead the ego vehicle
+                if obstacle.position.x > car.position.x:
+                    if not forward_obstacle:
+                        forward_obstacle = obstacle
+                    # obstacle closest to the front
+                    elif obstacle.position.x < forward_obstacle.position.x:
+                        forward_obstacle = obstacle
+        
+        obstacle_velx = forward_obstacle.velocity.x if forward_obstacle else car.velocity.x
+        car.setCruiseVel(obstacle_velx)
+        car.do_maintain = True
+        car.do_accelerate = False
+        car.do_decelerate = False
+
+    def decelerate(self, car):
+        car.do_decelerate = True
+        car.do_accelerate = False
+        car.do_maintain = False
+
+    def turn_right(self, car):
+        car.lane_id = min(car.lane_id + 1, NUM_LANES)
+        car.right_mode = True
+        car.left_mode = False
+
+    def turn_left(self, car):
+        car.lane_id = max(car.lane_id - 1, 1)
+        car.left_mode = True
+        car.right_mode = False

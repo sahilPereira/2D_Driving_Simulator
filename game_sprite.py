@@ -76,6 +76,21 @@ class Car(pygame.sprite.Sprite):
         self.left_mode, self.right_mode, self.do_accelerate, self.do_decelerate, self.do_maintain = False, False, False, False, False
         self.cruise_vel = 0.0
 
+    def simCopy(self):
+        sim_car = Car(self.id, self.position.x, self.position.y, self.velocity.x, self.velocity.y, self.lane_id)
+        # dynamic controls
+        sim_car.acceleration = self.acceleration
+        sim_car.steering = self.steering
+        # action controls
+        sim_car.left_mode = self.left_mode
+        sim_car.right_mode = self.right_mode
+        sim_car.do_accelerate = self.do_accelerate
+        sim_car.do_decelerate = self.do_decelerate
+        sim_car.do_maintain = self.do_maintain
+        sim_car.cruise_vel = self.cruise_vel
+
+        return sim_car
+
     def update(self, dt, s_leader):
         
         if self.do_accelerate:
@@ -182,18 +197,6 @@ class Car(pygame.sprite.Sprite):
             self.velocity.x = self.cruise_vel
             self.acceleration = 0.0
             self.do_maintain = False
-        
-        # if is_speed and vel_ceil >= cruise_vel_ceil:
-        #     self.velocity.x = self.cruise_vel
-        #     self.acceleration = 0.0
-        #     self.do_maintain = False
-        # elif (not is_speed) and vel_ceil <= cruise_vel_ceil:
-        #     self.velocity.x = self.cruise_vel
-        #     self.acceleration = 0.0
-        #     self.do_maintain = False
-        # if vel_ceil == cruise_vel_ceil:
-        #     self.acceleration = 0.0
-        #     self.do_maintain = False
 
     def decelerate(self, dt):
         # if abs(self.velocity.x) > dt * self.brake_deceleration:
@@ -242,6 +245,14 @@ class Obstacle(pygame.sprite.Sprite):
 
         self.acceleration = 0.0
         self.steering = 0.0
+
+    def simCopy(self):
+        sim_car = Obstacle(self.id, self.position.x, self.position.y, self.velocity.x, self.velocity.y, self.lane_id, color=YELLOW)
+        # dynamic controls
+        sim_car.acceleration = self.acceleration
+        sim_car.steering = self.steering
+
+        return sim_car
 
     def update(self, dt, s_leader):
         self.velocity += (self.acceleration * dt, 0)
@@ -316,7 +327,7 @@ class Game:
 
         car.steering = max(-car.max_steering, min(car.steering, car.max_steering))
 
-    def stackelbergControl(self, controller, all_agents, all_obstacles):
+    def stackelbergControl(self, controller, reference_car, all_agents, all_obstacles):
 
         # Step 1. select players to execute action at this instance
         players = controller.pickLeadersAndFollowers(all_agents, all_obstacles)
@@ -326,7 +337,17 @@ class Game:
         for leader in players:
             # Step 3: select actions for all players from step 2 sequentially
             selected_action = controller.selectAction(leader, all_obstacles)
+
+            # TODO: test stackelberg copy:
+            selected_action2 = controller.selectStackelbergAction(leader, all_obstacles, reference_car)
+
             self.executeAction(selected_action, leader, all_obstacles)
+
+            # if selected_action != selected_action2:
+            #     print("Different")
+            # else:
+            #     print("Different")
+
 
         # Note that every player acts as a leader when selecting their actions
         return selected_action
@@ -362,10 +383,26 @@ class Game:
         if car.do_maintain:
             return
 
-        obstacle_velx = car.velocity.x
+        # obstacle_velx = car.velocity.x
+        # for obstacle in all_obstacles:
+        #     if (obstacle.lane_id == car.lane_id) and (obstacle.position.x > car.position.x):
+        #         obstacle_velx = obstacle.velocity.x
+
+        forward_obstacle = None
         for obstacle in all_obstacles:
-            if (obstacle.lane_id == car.lane_id) and (obstacle.position.x > car.position.x):
-                obstacle_velx = obstacle.velocity.x
+            if obstacle == car:
+                continue
+            # obstacle in the same lane
+            if obstacle.lane_id == car.lane_id:
+                # obstacle has to be ahead the ego vehicle
+                if obstacle.position.x > car.position.x:
+                    if not forward_obstacle:
+                        forward_obstacle = obstacle
+                    # obstacle closest to the front
+                    elif obstacle.position.x < forward_obstacle.position.x:
+                        forward_obstacle = obstacle
+        
+        obstacle_velx = forward_obstacle.velocity.x if forward_obstacle else car.velocity.x
         car.setCruiseVel(obstacle_velx)
         car.do_maintain = True
         car.do_accelerate = False
@@ -465,7 +502,7 @@ class Game:
                 self.manualControl(reference_car, all_obstacles)
             else:
                 if action_timer >= ACTION_RESET_TIME:
-                    selected_action = self.stackelbergControl(s_controller, all_agents, all_obstacles)
+                    selected_action = self.stackelbergControl(s_controller, reference_car, all_agents, all_obstacles)
                     current_action = selected_action.name
                     action_timer = 0.0
 
@@ -504,7 +541,7 @@ class Game:
                         rand_vel_x = float(randrange(5, 15))
                         rand_lane_id = obstacle.lane_id
 
-                        new_obstacle = Obstacle(id=randrange(1,100), x=rand_pos_x, y=rand_pos_y, vel_x=rand_vel_x, vel_y=0.0, lane_id=rand_lane_id, color=YELLOW)
+                        new_obstacle = Obstacle(id=randrange(100,1000), x=rand_pos_x, y=rand_pos_y, vel_x=rand_vel_x, vel_y=0.0, lane_id=rand_lane_id, color=YELLOW)
                         all_coming_cars.add(new_obstacle)
                         all_obstacles.add(new_obstacle)
 
@@ -548,14 +585,15 @@ if __name__ == '__main__':
     # print(round(ceil(15.0003),3))
     # print(is_real)
 
-    obstacle_1 = {'id':0, 'x':20, 'y':LANE_1_C, 'vel_x':13.0, 'lane_id':1, 'color':YELLOW}
-    obstacle_2 = {'id':1, 'x':25, 'y':LANE_2_C, 'vel_x':12.0, 'lane_id':2, 'color':YELLOW}
-    obstacle_3 = {'id':2, 'x':40, 'y':LANE_3_C, 'vel_x':10.0, 'lane_id':3, 'color':YELLOW}
+    obstacle_1 = {'id':100, 'x':20, 'y':LANE_1_C, 'vel_x':13.0, 'lane_id':1, 'color':YELLOW}
+    obstacle_2 = {'id':101, 'x':25, 'y':LANE_2_C, 'vel_x':12.0, 'lane_id':2, 'color':YELLOW}
+    obstacle_3 = {'id':102, 'x':40, 'y':LANE_3_C, 'vel_x':10.0, 'lane_id':3, 'color':YELLOW}
     obstacle_list = [obstacle_1, obstacle_2, obstacle_3]
 
     car_1 = {'id':0, 'x':20, 'y':LANE_2_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':2}
-    car_2 = {'id':1, 'x':10, 'y':LANE_1_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':1}
-    cars_list = [car_1, car_2]
+    car_2 = {'id':1, 'x':5, 'y':LANE_1_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':1}
+    car_3 = {'id':2, 'x':5, 'y':LANE_2_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':2}
+    cars_list = [car_1, car_2, car_3]
 
     # run a Stackelberg game
     # game.run(cars_list, obstacle_list, True)
@@ -581,6 +619,11 @@ if __name__ == '__main__':
     #     print("None")
     # else:
     #     print("Not none")
+
+    # testRange = list(range(3))
+    # print(testRange)
+    # print(testRange[1:])
+    # print(testRange[2:])
 
 
     # run a human controlled game
