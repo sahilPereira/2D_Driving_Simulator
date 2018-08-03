@@ -8,7 +8,7 @@ from enum import Enum
 # TODO: probably set these values during init
 VISIBLE_DIST = 1900.0 # pixels
 LANE_DIFF = 120.0 # 120 pixels between centers of lanes
-ACTION_HORIZON = 0.25
+ACTION_HORIZON = 0.10
 COMFORT_LVL = 0.0
 NUM_PLAYERS = 3
 NUM_LANES = 3
@@ -36,77 +36,81 @@ class StackelbergPlayer():
         s_players = self.playerSets[leader]
 
         # Step 2: create copies of all the obstacles so we can project their actions
-        mut_agents = []
+        mut_agents = [] # mutable agents
         all_obstacles_copy = []
 
-        for obst in all_obstacles:
-            all_obstacles_copy.append(obst.simCopy())
-
-        # all_obstacles_copy = copy.deepcopy(all_obstacles)
+        # for obst in all_obstacles:
+        #     all_obstacles_copy.append(obst.simCopy())
 
         p_ids = []
         for obstacle in all_obstacles:
             if obstacle in s_players:
                 p_ids.append(obstacle.id)
-                # create a copy of the obstacle
-                # s_players_copy.append(obstacle.simCopy())
 
-        for obstacle_copy in all_obstacles_copy:
-            if obstacle_copy.id in p_ids:
-                # all_obstacles_copy.remove(obstacle_copy)
-                mut_agents.append(obstacle_copy)
-
-        # print("All obstacle_copy len: "+str(len(all_obstacles_copy)))
-        # print(all_obstacles_copy)
+        # for obstacle_copy in all_obstacles_copy:
+        #     if obstacle_copy.id in p_ids:
+        #         # all_obstacles_copy.remove(obstacle_copy)
+        #         mut_agents.append(obstacle_copy)
 
         # make sure the players are sorted
-        mut_agents = self.sortByPosition(mut_agents)
-
-        # use these for simulating different actions
-        # mut_agents = []
-        # for p_copy in s_players_copy:
-        #     mut_agents.append(p_copy.simCopy())
-
-        # all_obstacles_copy.add(mut_agents)
+        # mut_agents = self.sortByPosition(mut_agents)
 
         p1_best, p2_best = 0.0, 0.0
         p1_best_action, p2_best_action, p3_best_action = Action.MAINTAIN, Action.MAINTAIN, Action.MAINTAIN
 
         all_actions = list(Action)
-
         p_range = list(range(len(s_players)))
         p_count = len(p_range)
+
+        # state buffer to revert actions
+        state_buffer = [[] for x in range(min(2,p_count))]
+        state_buffer[0] = self.copyAllObjects(all_obstacles)
+
+        # for obstacle_copy in state_buffer[0]:
+        #     if obstacle_copy.id in p_ids:
+        #         # all_obstacles_copy.remove(obstacle_copy)
+        #         mut_agents.append(obstacle_copy)
+
+        mut_agents = [obstacle_copy for obstacle_copy in state_buffer[0] if obstacle_copy.id in p_ids]
+
+        # make sure the players are sorted
+        mut_agents = self.sortByPosition(mut_agents)
 
         p1_action_list = self.getActionSubset(all_actions, mut_agents[0])
         if p_count > 1:
             p2_action_list = self.getActionSubset(all_actions, mut_agents[1])
 
         for p1_action in p1_action_list:
-            # TODO remove after testing
-            # print(p1_action.name)
 
             # 1a. select and execute an action for player[0]
-            self.executeAction(p1_action, mut_agents[0], all_obstacles_copy)
-            mut_agents[0].update(ACTION_HORIZON, reference_car)
+            self.executeAction(p1_action, mut_agents[0], state_buffer[0])
+            state_buffer[0].update(ACTION_HORIZON, reference_car)
+            # mut_agents[0].update(ACTION_HORIZON, reference_car)
 
             if p_count > 1:
+                
+                state_buffer[1] = self.copyAllObjects(state_buffer[0])
+                mut_agents = [obstacle_copy for obstacle_copy in state_buffer[1] if obstacle_copy.id in p_ids]
+
                 # 1b. observe how followers react to selected action
                 for p2_action in p2_action_list:
                     
                     # 2a. select and execute an action for player[1]
-                    self.executeAction(p2_action, mut_agents[1], all_obstacles_copy)
-                    mut_agents[1].update(ACTION_HORIZON, reference_car)
+                    self.executeAction(p2_action, mut_agents[1], state_buffer[1])
+                    state_buffer[1].update(ACTION_HORIZON, reference_car)
+                    # mut_agents[1].update(ACTION_HORIZON, reference_car)
 
                     if p_count > 2:
                         # 2b. observe how followers react to selected action
                         # 3a. select and execute an action which maximizes player[2] utility
-                        p3_best_action = self.selectAction(mut_agents[2], all_obstacles_copy)
-                        self.executeAction(p3_best_action, mut_agents[2], all_obstacles_copy)
-                        mut_agents[2].update(ACTION_HORIZON, reference_car)
+                        p3_best_action = self.selectAction(mut_agents[2], state_buffer[1])
+                        self.executeAction(p3_best_action, mut_agents[2], state_buffer[1])
+                        # mut_agents[2].update(ACTION_HORIZON, reference_car)
+                        state_buffer[1].update(ACTION_HORIZON, reference_car)
 
                     # 2c. calculate utility value for current state
-                    p2_utility = self.positiveUtility(mut_agents[1], mut_agents[1].lane_id, mut_agents[1].velocity.x, all_obstacles_copy)
-                    p2_utility += self.negativeUtility(mut_agents[1], mut_agents[1].lane_id, mut_agents[1].velocity.x, all_obstacles_copy)
+                    p2_utility = self.positiveUtility(mut_agents[1], mut_agents[1].lane_id, mut_agents[1].velocity.x, state_buffer[1])
+                    p2_utility += self.negativeUtility(mut_agents[1], mut_agents[1].lane_id, mut_agents[1].velocity.x, state_buffer[1])
 
                     # 2d. select action which results in the best utility value
                     if p2_utility > p2_best:
@@ -114,22 +118,24 @@ class StackelbergPlayer():
                         p2_best_action = p2_action
 
                     # reset the state for agents 2 and 3
-                    self.resetState(mut_agents, s_players, all_obstacles_copy, p_range[1:])
+                    # self.resetState(mut_agents, s_players, all_obstacles_copy, p_range[1:])
+                    state_buffer[1] = self.copyAllObjects(state_buffer[0])
+                    mut_agents = [obstacle_copy for obstacle_copy in state_buffer[1] if obstacle_copy.id in p_ids]
 
                 # execute the best actions for player 2 and 3
-                self.executeAction(p2_best_action, mut_agents[1], all_obstacles_copy)
+                self.executeAction(p2_best_action, mut_agents[1], state_buffer[1])
                 mut_agents[1].update(ACTION_HORIZON, reference_car)
 
                 if p_count > 2:
-                    self.executeAction(p3_best_action, mut_agents[2], all_obstacles_copy)
+                    self.executeAction(p3_best_action, mut_agents[2], state_buffer[1])
                     mut_agents[2].update(ACTION_HORIZON, reference_car)
 
             # 1c. calculate utility value for final state
             # TODO remove after testing
             # print(mut_agents[0].velocity.x)
 
-            p1_utility = self.positiveUtility(mut_agents[0], mut_agents[0].lane_id, mut_agents[0].velocity.x, all_obstacles_copy)
-            p1_utility += self.negativeUtility(mut_agents[0], mut_agents[0].lane_id, mut_agents[0].velocity.x, all_obstacles_copy)
+            p1_utility = self.positiveUtility(mut_agents[0], mut_agents[0].lane_id, mut_agents[0].velocity.x, state_buffer[0])
+            p1_utility += self.negativeUtility(mut_agents[0], mut_agents[0].lane_id, mut_agents[0].velocity.x, state_buffer[0])
 
             # 1d. select the action which results in the best utility value
             if p1_utility > p1_best:
@@ -137,7 +143,9 @@ class StackelbergPlayer():
                 p1_best_action = p1_action
 
             # reset the state for agents 1, 2 and 3
-            self.resetState(mut_agents, s_players, all_obstacles_copy, p_range)
+            # self.resetState(mut_agents, s_players, all_obstacles_copy, p_range)
+            state_buffer[0] = self.copyAllObjects(all_obstacles)
+            mut_agents = [obstacle_copy for obstacle_copy in state_buffer[0] if obstacle_copy.id in p_ids]
 
         # TODO: remove after testing
         # ------------------------------------------------------------------
@@ -168,6 +176,12 @@ class StackelbergPlayer():
             all_obstacles_copy.append(mut_agents[i])
 
         return
+
+    def copyAllObjects(self, all_objects):
+        copied_objects = pygame.sprite.Group()
+        for obj in all_objects:
+            copied_objects.add(obj.simCopy())
+        return copied_objects
 
     def getActionUtilSet(self, leader, all_obstacles):
         current_lane = leader.lane_id

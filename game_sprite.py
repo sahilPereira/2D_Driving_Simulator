@@ -13,7 +13,7 @@ GREY = (210, 210 ,210)
 PURPLE = (255, 0, 255)
 
 WIDTH = 1900
-HEIGHT = 360
+HEIGHT = 240
 # HEIGHT = 720
 NUM_LANES = 3
 LANE_WIDTH = int(HEIGHT/NUM_LANES)
@@ -336,12 +336,13 @@ class Game:
         # Step 2. iterate over the set of players and execute their actions
         for leader in players:
             # Step 3: select actions for all players from step 2 sequentially
-            selected_action = controller.selectAction(leader, all_obstacles)
+            # selected_action = controller.selectAction(leader, all_obstacles)
 
             # TODO: test stackelberg copy:
             selected_action2 = controller.selectStackelbergAction(leader, all_obstacles, reference_car)
 
-            self.executeAction(selected_action, leader, all_obstacles)
+            self.executeAction(selected_action2, leader, all_obstacles)
+            # print("Car: [%s], Action: [%s]"%(leader.id, selected_action2.name))
 
             # if selected_action != selected_action2:
             #     print("Different")
@@ -350,7 +351,7 @@ class Game:
 
 
         # Note that every player acts as a leader when selecting their actions
-        return selected_action
+        return selected_action2
 
     # execute the given action for the specified leader
     def executeAction(self, selected_action, leader, all_obstacles):
@@ -593,6 +594,8 @@ if __name__ == '__main__':
     car_1 = {'id':0, 'x':20, 'y':LANE_2_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':2}
     car_2 = {'id':1, 'x':5, 'y':LANE_1_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':1}
     car_3 = {'id':2, 'x':5, 'y':LANE_2_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':2}
+    # car_4 = {'id':3, 'x':20, 'y':LANE_3_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':3}
+    # car_5 = {'id':4, 'x':5, 'y':LANE_3_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':3}
     cars_list = [car_1, car_2, car_3]
 
     # run a Stackelberg game
@@ -624,7 +627,9 @@ if __name__ == '__main__':
     # print(testRange)
     # print(testRange[1:])
     # print(testRange[2:])
-
+    # newList = [[] for x in range(max(1,2))]
+    # newList[0] = list(range(4))
+    # print(newList)
 
     # run a human controlled game
     game.run(cars_list, obstacle_list, True, True)
