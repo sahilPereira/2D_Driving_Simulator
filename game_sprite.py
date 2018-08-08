@@ -285,15 +285,15 @@ class Game:
 
     def displayScore(self, steering, car_angle):
         font = pygame.font.SysFont(None, 25)
-        text = font.render("accel: "+str(steering), True, WHITE)
-        text_angle = font.render("velocity: "+str(car_angle), True, WHITE)
+        text = font.render("Collision [obstacle]: "+str(steering), True, WHITE)
+        text_angle = font.render("Collision [agent]: "+str(car_angle), True, WHITE)
         self.screen.blit(text, (0,0))
         self.screen.blit(text_angle, (0,25))
 
     def displayPos(self, position):
         font = pygame.font.SysFont(None, 25)
         # text = font.render("X: "+str(position.x)+", Y: "+str(position.y), True, WHITE)
-        text = font.render("Collisions: "+str(position), True, WHITE)
+        text = font.render("Velocity: "+str(position), True, WHITE)
         self.screen.blit(text, (0,50))
 
     def displayAction(self, action):
@@ -331,17 +331,16 @@ class Game:
 
         # Step 1. select players to execute action at this instance
         players = controller.pickLeadersAndFollowers(all_agents, all_obstacles)
-        # print(len(players))
 
         # Step 2. iterate over the set of players and execute their actions
         for leader in players:
             # Step 3: select actions for all players from step 2 sequentially
             # selected_action = controller.selectAction(leader, all_obstacles)
 
-            # TODO: test stackelberg copy:
-            selected_action2 = controller.selectStackelbergAction(leader, all_obstacles, reference_car)
+            # select action using Stackelberg game
+            selected_action = controller.selectStackelbergAction(leader, all_obstacles, reference_car)
 
-            self.executeAction(selected_action2, leader, all_obstacles)
+            self.executeAction(selected_action, leader, all_obstacles)
             # print("Car: [%s], Action: [%s]"%(leader.id, selected_action2.name))
 
             # if selected_action != selected_action2:
@@ -351,7 +350,7 @@ class Game:
 
 
         # Note that every player acts as a leader when selecting their actions
-        return selected_action2
+        return selected_action
 
     # execute the given action for the specified leader
     def executeAction(self, selected_action, leader, all_obstacles):
@@ -443,7 +442,8 @@ class Game:
         bkgd = pygame.transform.scale(bkgd, (WIDTH, HEIGHT))
         bkgd_x = 0
 
-        num_collisions = 0
+        num_obs_collisions = 0
+        num_agent_collisions = 0
 
         all_agents = pygame.sprite.Group()
         all_obstacles = pygame.sprite.Group()
@@ -509,17 +509,22 @@ class Game:
 
             # collision check
             for agent in all_agents:
+                # get collisions with non reactive obstacles
                 car_collision_list = pygame.sprite.spritecollide(agent,all_coming_cars,False)
-                num_collisions += len(car_collision_list)
-                # for accident in car_collision_list:
-                #     num_collisions += 1
-                    #End Of Game
-                    # self.exit = True
+                num_obs_collisions += len(car_collision_list)
+
+                collision_group = all_agents.copy()
+                collision_group.remove(agent)
+                car_collision_list = pygame.sprite.spritecollide(agent,collision_group,False)
+                num_agent_collisions += len(car_collision_list)
 
             # update all sprites
             # car.update(dt)
             all_agents.update(dt, reference_car)
             all_coming_cars.update(dt, reference_car)
+
+            sorted_agents = sorted(all_agents, key=lambda x: x.position.x, reverse=True)
+            reference_car = sorted_agents[0]
 
             # TODO: testing
             # test_counter += dt
@@ -558,17 +563,18 @@ class Game:
             # bkgd_x -= 1
             # pygame.draw.line(self.screen, (255, 0, 0), (rel_x, 0), (rel_x, HEIGHT), 3)
 
-            # update collision display count
-            new_lane_pos = (LANE_WIDTH * reference_car.lane_id - (LANE_WIDTH/2))/ppu
-            self.displayScore(reference_car.acceleration, reference_car.velocity.x)
 
             # update the agent sprites
             self.updateSprites(all_agents)
             # update obstacle sprites
             self.updateSprites(all_coming_cars)
 
+            # update collision display count
+            # new_lane_pos = (LANE_WIDTH * reference_car.lane_id - (LANE_WIDTH/2))/ppu
+            self.displayScore(num_obs_collisions, num_agent_collisions)
+            
             # display position of car
-            self.displayPos(num_collisions)
+            self.displayPos(reference_car.velocity.x)
 
             # display selected action
             self.displayAction(current_action)
@@ -625,6 +631,10 @@ if __name__ == '__main__':
 
     # testRange = list(range(3))
     # print(testRange)
+    # newRange = list(range(5))
+    # for i in newRange:
+    #     if i not in testRange:
+    #         print(i)
     # print(testRange[1:])
     # print(testRange[2:])
     # newList = [[] for x in range(max(1,2))]

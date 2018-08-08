@@ -1,14 +1,14 @@
 import os
 import pygame
 import copy
-from math import tan, radians, degrees, copysign
+from math import tan, radians, degrees, copysign, exp
 from pygame.math import Vector2
 from enum import Enum
 
 # TODO: probably set these values during init
 VISIBLE_DIST = 1900.0 # pixels
 LANE_DIFF = 120.0 # 120 pixels between centers of lanes
-ACTION_HORIZON = 0.10
+ACTION_HORIZON = 0.25
 COMFORT_LVL = 0.0
 NUM_PLAYERS = 3
 NUM_LANES = 3
@@ -33,107 +33,116 @@ class StackelbergPlayer():
     def selectStackelbergAction(self, leader, all_obstacles, reference_car):
 
         # Step 1: get the players involved in this game
+        # --------------------------------------------------------------------------------------------
         s_players = self.playerSets[leader]
 
-        # Step 2: create copies of all the obstacles so we can project their actions
-        mut_agents = [] # mutable agents
-        all_obstacles_copy = []
-
-        # for obst in all_obstacles:
-        #     all_obstacles_copy.append(obst.simCopy())
-
+        # keep track of the ids for each agent so they can be cloned
         p_ids = []
         for obstacle in all_obstacles:
             if obstacle in s_players:
                 p_ids.append(obstacle.id)
 
-        # for obstacle_copy in all_obstacles_copy:
-        #     if obstacle_copy.id in p_ids:
-        #         # all_obstacles_copy.remove(obstacle_copy)
-        #         mut_agents.append(obstacle_copy)
-
-        # make sure the players are sorted
-        # mut_agents = self.sortByPosition(mut_agents)
-
-        p1_best, p2_best = 0.0, 0.0
-        p1_best_action, p2_best_action, p3_best_action = Action.MAINTAIN, Action.MAINTAIN, Action.MAINTAIN
-
+        # actions and player count
         all_actions = list(Action)
-        p_range = list(range(len(s_players)))
-        p_count = len(p_range)
+        p_count = len(s_players)
 
+        # Step 2: create copies of all the obstacles so we can project their actions
+        # --------------------------------------------------------------------------------------------
         # state buffer to revert actions
         state_buffer = [[] for x in range(min(2,p_count))]
+        # make a copy of all the current obstacles
         state_buffer[0] = self.copyAllObjects(all_obstacles)
-
-        # for obstacle_copy in state_buffer[0]:
-        #     if obstacle_copy.id in p_ids:
-        #         # all_obstacles_copy.remove(obstacle_copy)
-        #         mut_agents.append(obstacle_copy)
-
+        
+        # save references to the players involved in the current Stackelberg game
         mut_agents = [obstacle_copy for obstacle_copy in state_buffer[0] if obstacle_copy.id in p_ids]
-
         # make sure the players are sorted
         mut_agents = self.sortByPosition(mut_agents)
+
+        # Step 3: initialize all the default utilities and actions
+        # --------------------------------------------------------------------------------------------
+        # p1_best, p2_best = float("-inf"), float("-inf")
+        p1_best, p2_best = 0.0, 0.0
+        p1_best_action, p2_best_action, p3_best_action = Action.MAINTAIN, Action.MAINTAIN, Action.MAINTAIN
 
         p1_action_list = self.getActionSubset(all_actions, mut_agents[0])
         if p_count > 1:
             p2_action_list = self.getActionSubset(all_actions, mut_agents[1])
 
+        # Step 4: get the best action for the leader using the Stackelberg game:
+        # --------------------------------------------------------------------------------------------
         for p1_action in p1_action_list:
 
             # 1a. select and execute an action for player[0]
             self.executeAction(p1_action, mut_agents[0], state_buffer[0])
-            state_buffer[0].update(ACTION_HORIZON, reference_car)
-            # mut_agents[0].update(ACTION_HORIZON, reference_car)
+            # update state_buffer so that it does not contain the 2 other vehicles for projection
+            no_update_players = []
+            if p_count > 1:
+                no_update_players = mut_agents[1:]
+            for player in state_buffer[0]:
+                if player not in no_update_players:
+                    player.update(ACTION_HORIZON, reference_car)
+            # state_buffer[0].update(ACTION_HORIZON, reference_car)
 
+            # if player 2 exists, consider its response to player 1's action
             if p_count > 1:
                 
+                # make a copy of the state induced by player 1's action
                 state_buffer[1] = self.copyAllObjects(state_buffer[0])
+                # since new copies are generated, we need to update the Stackelberg player copies
                 mut_agents = [obstacle_copy for obstacle_copy in state_buffer[1] if obstacle_copy.id in p_ids]
+                mut_agents = self.sortByPosition(mut_agents)
 
                 # 1b. observe how followers react to selected action
                 for p2_action in p2_action_list:
                     
                     # 2a. select and execute an action for player[1]
                     self.executeAction(p2_action, mut_agents[1], state_buffer[1])
-                    state_buffer[1].update(ACTION_HORIZON, reference_car)
-                    # mut_agents[1].update(ACTION_HORIZON, reference_car)
+                    mut_agents[1].update(ACTION_HORIZON, reference_car)
+                    # state_buffer[1].update(ACTION_HORIZON, reference_car)
 
+                    # if player 3 exists, consider its response to player 1 and 2's action
+                    p3_action = None
                     if p_count > 2:
-                        # 2b. observe how followers react to selected action
                         # 3a. select and execute an action which maximizes player[2] utility
-                        p3_best_action = self.selectAction(mut_agents[2], state_buffer[1])
-                        self.executeAction(p3_best_action, mut_agents[2], state_buffer[1])
-                        # mut_agents[2].update(ACTION_HORIZON, reference_car)
-                        state_buffer[1].update(ACTION_HORIZON, reference_car)
+                        p3_action = self.selectAction(mut_agents[2], state_buffer[1])
+                        self.executeAction(p3_action, mut_agents[2], state_buffer[1])
+                        mut_agents[2].update(ACTION_HORIZON, reference_car)
+                        # state_buffer[1].update(ACTION_HORIZON, reference_car)
 
-                    # 2c. calculate utility value for current state
+                    # 2b. calculate utility value for player 2 in the current state
                     p2_utility = self.positiveUtility(mut_agents[1], mut_agents[1].lane_id, mut_agents[1].velocity.x, state_buffer[1])
                     p2_utility += self.negativeUtility(mut_agents[1], mut_agents[1].lane_id, mut_agents[1].velocity.x, state_buffer[1])
 
-                    # 2d. select action which results in the best utility value
+                    # 2c. select action which results in the best utility value
                     if p2_utility > p2_best:
                         p2_best = p2_utility
+                        # update player 2 and 3 best actions
                         p2_best_action = p2_action
+                        p3_best_action = p3_action
 
-                    # reset the state for agents 2 and 3
-                    # self.resetState(mut_agents, s_players, all_obstacles_copy, p_range[1:])
+                    # revert state back to the one generated by player 1's action
                     state_buffer[1] = self.copyAllObjects(state_buffer[0])
                     mut_agents = [obstacle_copy for obstacle_copy in state_buffer[1] if obstacle_copy.id in p_ids]
+                    mut_agents = self.sortByPosition(mut_agents)
 
                 # execute the best actions for player 2 and 3
-                self.executeAction(p2_best_action, mut_agents[1], state_buffer[1])
+                mut_agents = [obstacle_copy for obstacle_copy in state_buffer[0] if obstacle_copy.id in p_ids]
+                mut_agents = self.sortByPosition(mut_agents)
+                self.executeAction(p2_best_action, mut_agents[1], state_buffer[0])
+                # DEBUG: FOUND BUG
                 mut_agents[1].update(ACTION_HORIZON, reference_car)
+                # state_buffer[0].update(ACTION_HORIZON, reference_car)
 
                 if p_count > 2:
-                    self.executeAction(p3_best_action, mut_agents[2], state_buffer[1])
+                    self.executeAction(p3_best_action, mut_agents[2], state_buffer[0])
+                    # DEBUG: FOUND BUG
                     mut_agents[2].update(ACTION_HORIZON, reference_car)
+                    # state_buffer[0].update(ACTION_HORIZON, reference_car)
 
-            # 1c. calculate utility value for final state
             # TODO remove after testing
             # print(mut_agents[0].velocity.x)
 
+            # 1c. calculate utility value for final state
             p1_utility = self.positiveUtility(mut_agents[0], mut_agents[0].lane_id, mut_agents[0].velocity.x, state_buffer[0])
             p1_utility += self.negativeUtility(mut_agents[0], mut_agents[0].lane_id, mut_agents[0].velocity.x, state_buffer[0])
 
@@ -146,6 +155,7 @@ class StackelbergPlayer():
             # self.resetState(mut_agents, s_players, all_obstacles_copy, p_range)
             state_buffer[0] = self.copyAllObjects(all_obstacles)
             mut_agents = [obstacle_copy for obstacle_copy in state_buffer[0] if obstacle_copy.id in p_ids]
+            mut_agents = self.sortByPosition(mut_agents)
 
         # TODO: remove after testing
         # ------------------------------------------------------------------
@@ -240,15 +250,11 @@ class StackelbergPlayer():
         sorted_agents = self.sortByPosition(all_agents)
         
         # 2. select top agent as leader and add to leader/follower list
-        # players = [set() for x in range(NUM_PLAYERS)]
         while sorted_agents:
             leader = sorted_agents.pop(0)
 
             # get the followers for this leader
             all_players = self.pickPlayers(leader, all_agents, all_obstacles)
-
-            # save player sets for each leader
-            # self.playerSets[leader] = all_players
 
             # 3. add the leaders and followers to the players list of sets
             for idx, agent in enumerate(all_players):
@@ -260,16 +266,21 @@ class StackelbergPlayer():
         leader_list = self.players[0]
 
         # save player sets for each leader
+        # TODO: testing making everyone a leader
         for leader in leader_list:
+        # for leader in sorted_agents:
             # get the followers for this leader
             all_players = self.pickPlayers(leader, all_agents, all_obstacles)
             self.playerSets[leader] = all_players
 
         # update players for next turn
+        # TODO: commented this out for testing, undo if new idea doesnt work
         self.updatePlayersList()
 
         # return the leaders
+        # TODO: testing using all agents as leaders
         return leader_list
+        # return sorted_agents
 
     # remove current leaders and make first followers the new leaders
     # TODO: might want to make this into a queue datastructure
@@ -280,7 +291,7 @@ class StackelbergPlayer():
         self.players.append(set())
         return
 
-    # TODO: refactor this method
+    # Get at most 3 vehicles that are close to the back of the ego vehicle
     def pickPlayers(self, ego, all_agents, all_obstacles):
         players = [ego]
 
@@ -298,6 +309,7 @@ class StackelbergPlayer():
                     adversary_lane += 1
                     break
 
+        # the two other players considered
         back_agent, side_agent = None, None
         for agent in all_obstacles:
             if agent != ego:
@@ -342,9 +354,8 @@ class StackelbergPlayer():
 
     # TODO: start with the simple positive utility
     def positiveUtility(self, ego, intended_lane, intended_velocity, all_obstacles):
-        # max visible distance
-        # ideal_velocity = VISIBLE_DIST + ego.max_velocity
-        ideal_velocity = ego.max_velocity
+        # max stopping distance
+        ideal_distance = self.stoppingDist(ego, ego.max_velocity)
 
         for obstacle in all_obstacles:
             if obstacle == ego:
@@ -358,14 +369,48 @@ class StackelbergPlayer():
                     # calculate actual difference between cars
                     dx = abs(obstacle.position.x - ego.position.x) - (ego.rect[2]/32) - self.car_width
 
-                    stopping_dist = self.stoppingDist(ego, intended_velocity)
-                    tmp_val = intended_velocity + min(dx - stopping_dist, 0)
-                    # tmp_val = dx + intended_velocity + min(dx - stopping_dist, 0)
-                    # tmp_val = dx + ego.velocity.x + min(dx - stopping_dist, 0)
+                    # TODO: try adding difference in lateral positions
+                    # dy = 0.0
+                    dy = abs(obstacle.position.y - ego.position.y)
+                    dy = LANE_DIFF/32 if dx > ego.rect[2]/32 else dy
 
-                    ideal_velocity = min(tmp_val, ideal_velocity)
-                    # ideal_velocity = min(tmp_val, VISIBLE_DIST + ideal_velocity)
-        return ideal_velocity
+                    stopping_dist = self.stoppingDist(ego, intended_velocity)
+                    # tmp_val = stopping_dist + min(dx - stopping_dist, 0)*10
+                    tmp_val = stopping_dist - exp(0.5*abs(min(dx - stopping_dist, 0))) - exp(-1*dy)
+
+                    ideal_distance = min(tmp_val, ideal_distance)
+        return ideal_distance
+
+    # def positiveUtility(self, ego, intended_lane, intended_velocity, all_obstacles):
+    #     # max visible distance
+    #     # ideal_velocity = VISIBLE_DIST + ego.max_velocity
+    #     ideal_velocity = ego.max_velocity
+
+    #     for obstacle in all_obstacles:
+    #         if obstacle == ego:
+    #             continue
+    #         if obstacle.lane_id == intended_lane:
+    #             dx = obstacle.position.x - ego.position.x
+    #             # dx = (obstacle.position.x - (obstacle.rect[2]/64)) - (ego.position.x + (ego.rect[2]/64)) - COMFORT_LVL
+
+    #             # only consider vehicles ahead of ego vehicle
+    #             if dx >= 0:
+    #                 # calculate actual difference between cars
+    #                 dx = abs(obstacle.position.x - ego.position.x) - (ego.rect[2]/32) - self.car_width
+
+    #                 # TODO: try adding difference in lateral positions
+    #                 dy = 0.0
+    #                 # dy = abs(obstacle.position.y - ego.position.y)
+    #                 # dy = LANE_DIFF/32 if dx > ego.rect[2]/32 else dy
+
+    #                 stopping_dist = self.stoppingDist(ego, intended_velocity)
+    #                 tmp_val = intended_velocity + min(dx - stopping_dist, 0)
+    #                 # tmp_val = dx + intended_velocity + min(dx - stopping_dist, 0)
+    #                 # tmp_val = dx + ego.velocity.x + min(dx - stopping_dist, 0)
+
+    #                 ideal_velocity = min(tmp_val, ideal_velocity) + dy
+    #                 # ideal_velocity = min(tmp_val, VISIBLE_DIST + ideal_velocity)
+    #     return ideal_velocity
 
     # compute stopping distance for ego vehicle
     def stoppingDist(self, ego, intended_velocity):
@@ -403,11 +448,16 @@ class StackelbergPlayer():
                     dist_lane_change = intended_velocity * time_lane_change
                     # dist_lane_change = ego.velocity.x * time_lane_change
 
+                    # TODO: try adding difference in lateral positions
+                    # dy = 0.0
+                    dy = abs(obstacle.position.y - ego.position.y)
+                    dy = LANE_DIFF/32 if dx > ego.rect[2]/32 else dy
+
                     # Negative utility formula
                     if not neg_utility:
-                        neg_utility = dx - dv*time_lane_change - dist_lane_change
+                        neg_utility = dx - dv*time_lane_change - dist_lane_change - exp(-1*dy)
                     else:
-                        neg_utility = min(dx - dv*time_lane_change - dist_lane_change, neg_utility)
+                        neg_utility = min(dx - dv*time_lane_change - dist_lane_change - exp(-1*dy), neg_utility) 
                     # neg_utility = abs(dx) - dv*time_lane_change - dist_lane_change
 
         # set neg_utility to 0.0 if it was not assigned above
@@ -417,8 +467,8 @@ class StackelbergPlayer():
     # Calculate lateral velocity assuming max steering for vehicle to get time to change lane
     def timeToChangeLane(self, ego, intended_velocity):
         turning_radius = ego.length / tan(radians(ego.max_steering))
-        angular_velocity = intended_velocity / turning_radius
-        # angular_velocity = ego.velocity.x / turning_radius
+        # prevent intended velocity from being zero
+        angular_velocity = max(intended_velocity, 1.0) / turning_radius
 
         # assuming center of lanes, we know the distance is 120 pixels
         lane_change_time = LANE_DIFF/degrees(angular_velocity)
