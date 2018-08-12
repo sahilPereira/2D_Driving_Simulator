@@ -416,124 +416,237 @@ class Game:
         car.left_mode = True
         car.right_mode = False
 
-    def run(self, cars_list, obstacle_list, is_Stackelberg=False, inf_obstacles=False):
+    def run(self, cars_list, obstacle_list, is_Stackelberg=False, inf_obstacles=False, is_data_saved=False):
 
         bkgd = pygame.image.load('roadImg.png').convert()
         bkgd = pygame.transform.scale(bkgd, (WIDTH, HEIGHT))
         bkgd_x = 0
 
-        all_agents = pygame.sprite.Group()
-        all_obstacles = pygame.sprite.Group()
-        all_coming_cars = pygame.sprite.Group()
+        TOTAL_AGENTS = 5
+        TOTAL_RUNS = 10
+        RUN_DURATION = 120 # 60 seconds
 
-        reference_car = None
-        for data in cars_list:
-            new_car = Car(id=data['id'], x=data['x'], y=data['y'], vel_x=data['vel_x'], vel_y=data['vel_y'], lane_id=data['lane_id'])
-            all_agents.add(new_car)
-            all_obstacles.add(new_car)
+        files_dir = 'datafiles/NoDelay/'
+        # file_name = files_dir+'model_IGA_%d_%d_%d.csv'%(TOTAL_AGENTS, TOTAL_RUNS, RUN_DURATION)
 
-            if not reference_car:
-                reference_car = new_car
+        df_columns = ['agent_count','run_count','obs_collisions','agent_collisions', 'avg_velocity', 'avg_distance']
+        position_columns = ['agent_id','time','pos_x','pos_y']
 
-        for data in obstacle_list:
-            new_obstacle = Obstacle(id=data['id'], x=data['x'], y=data['y'], vel_x=data['vel_x'], vel_y=0.0, lane_id=data['lane_id'], color=data['color'])
-            all_coming_cars.add(new_obstacle)
-            all_obstacles.add(new_obstacle)
+        # track data across multiple runs and agents
+        all_data = [[] for x in range(6)]
 
-        # Stackelberg controller
-        s_controller = SCP.StackelbergPlayer(CAR_WIDTH) if is_Stackelberg else None
+        for agent_count in range(TOTAL_AGENTS):
 
-        action_timer = 0.0
-        current_action = SCP.Action.MAINTAIN.name
-        num_obs_collisions = 0
-        num_agent_collisions = 0
+            # track data across multiple runs
+            data_per_run = [[] for x in range(6)]
+            position_tracker = [[] for x in range(4)]
 
-        while not self.exit:
-            dt = self.clock.get_time() / 1000
+            # backup_file_name = files_dir+'backup_IGA_%d_%d_%d.csv'%(agent_count+1, TOTAL_RUNS, RUN_DURATION)
+            # position_file_name = files_dir+'pos_IGA_%d_%d.csv'%(agent_count+1, RUN_DURATION)
 
-            action_timer += dt
+            for run_count in range(TOTAL_RUNS):
+                # Stackelberg controller
+                s_controller = SCP.StackelbergPlayer(CAR_WIDTH) if is_Stackelberg else None
 
-            # Event queue
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self.exit = True
+                all_agents = pygame.sprite.Group()
+                all_obstacles = pygame.sprite.Group()
+                all_coming_cars = pygame.sprite.Group()
 
-            if not is_Stackelberg:
-                self.manualControl(reference_car, all_obstacles)
-            else:
-                if action_timer >= ACTION_RESET_TIME:
-                    selected_action = self.stackelbergControl(s_controller, reference_car, all_agents, all_obstacles)
-                    current_action = selected_action.name
-                    action_timer = 0.0
+                reference_car = None
+                # for data in cars_list[:agent_count+1]:
+                for data in cars_list[:3]:
+                    new_car = Car(id=data['id'], x=data['x'], y=data['y'], vel_x=data['vel_x'], vel_y=data['vel_y'], lane_id=data['lane_id'])
+                    all_agents.add(new_car)
+                    all_obstacles.add(new_car)
 
-            # collision check
-            for agent in all_agents:
-                # get collisions with non reactive obstacles
-                car_collision_list = pygame.sprite.spritecollide(agent,all_coming_cars,False)
-                num_obs_collisions += len(car_collision_list)
+                    if not reference_car:
+                        reference_car = new_car
 
-                collision_group = all_agents.copy()
-                collision_group.remove(agent)
-                car_collision_list = pygame.sprite.spritecollide(agent,collision_group,False)
-                num_agent_collisions += len(car_collision_list)
+                for data in obstacle_list:
+                    new_obstacle = Obstacle(id=data['id'], x=data['x'], y=data['y'], vel_x=data['vel_x'], vel_y=0.0, lane_id=data['lane_id'], color=data['color'])
+                    all_coming_cars.add(new_obstacle)
+                    all_obstacles.add(new_obstacle)
 
-            # update all sprites
-            all_agents.update(dt, reference_car)
-            all_coming_cars.update(dt, reference_car)
+                action_timer = 0.0
+                log_timer = 0.0
+                continuous_time = 0.0
+                current_action = SCP.Action.MAINTAIN.name
+                num_obs_collisions = 0
+                num_agent_collisions = 0
 
-            sorted_agents = sorted(all_agents, key=lambda x: x.position.x, reverse=True)
-            reference_car = sorted_agents[0]
+                total_velocity_per_run = []
+                total_distance_per_run = []
 
-            # generate new obstacles
-            if inf_obstacles:
-                for obstacle in all_coming_cars:
-                    if obstacle.position.x < -CAR_WIDTH/32:
-                        # remove old obstacle
-                        all_coming_cars.remove(obstacle)
-                        all_obstacles.remove(obstacle)
-                        # obstacle_lanes.remove(obstacle.lane_id)
+                collision_count_lock = True
+                run_time = 0.0
 
-                        # add new obstacle
-                        rand_pos_x = float(randrange(70, 80))
-                        rand_pos_y = NEW_LANES[obstacle.lane_id-1]
-                        rand_vel_x = float(randrange(5, 15))
-                        rand_lane_id = obstacle.lane_id
+                is_paused = False
 
-                        new_obstacle = Obstacle(id=randrange(100,1000), x=rand_pos_x, y=rand_pos_y, vel_x=rand_vel_x, vel_y=0.0, lane_id=rand_lane_id, color=YELLOW)
-                        all_coming_cars.add(new_obstacle)
-                        all_obstacles.add(new_obstacle)
+                # while not self.exit:
+                while run_time <= RUN_DURATION and not self.exit:
+                    dt = self.clock.get_time() / 1000
+                    # dt = self.clock.get_fps() / 1000
+                    
+                    # pause game when needed
+                    for e in pygame.event.get():
+                        if e.type == pygame.QUIT:
+                            self.exit = True
+                        if e.type == pygame.KEYDOWN:
+                            if e.key == pygame.K_p: is_paused = True
+                            if e.key == pygame.K_r: is_paused = False
 
-            # Drawing
-            self.screen.fill((0, 0, 0))
-            
-            #Draw The Scrolling Road
-            rel_x = bkgd_x % bkgd.get_rect().width
-            self.screen.blit(bkgd, (rel_x - bkgd.get_rect().width, 0))
-            if rel_x < WIDTH:
-                self.screen.blit(bkgd, (rel_x, 0))
-            bkgd_x -= reference_car.velocity.x
-            # bkgd_x -= 1
-            # pygame.draw.line(self.screen, (255, 0, 0), (rel_x, 0), (rel_x, HEIGHT), 3)
+                    if is_paused:
+                        pygame.display.flip()
+                        self.clock.tick(self.ticks)
+                        continue
+
+                    action_timer += dt
+                    log_timer += dt
+                    run_time += dt
+                    continuous_time += dt
+
+                    # Event queue
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            self.exit = True
+
+                    if not is_Stackelberg:
+                        self.manualControl(reference_car, all_obstacles)
+                    else:
+                        if action_timer >= ACTION_RESET_TIME:
+                            selected_action = self.stackelbergControl(s_controller, reference_car, all_agents, all_obstacles)
+                            current_action = selected_action.name
+                            action_timer = 0.0
+
+                    # collision check
+                    if not collision_count_lock:
+                        for agent in all_agents:
+                            # get collisions with non reactive obstacles
+                            car_collision_list = pygame.sprite.spritecollide(agent,all_coming_cars,False)
+                            num_obs_collisions += len(car_collision_list)
+
+                            collision_group = all_agents.copy()
+                            collision_group.remove(agent)
+                            car_collision_list = pygame.sprite.spritecollide(agent,collision_group,False)
+                            num_agent_collisions += len(car_collision_list)
+
+                    # update all sprites
+                    all_agents.update(dt, reference_car)
+                    all_coming_cars.update(dt, reference_car)
+
+                    # log the velocity and distance travelled
+                    if log_timer >= ACTION_RESET_TIME:
+                        for agent in all_agents:
+                            # log current velocity for each agent
+                            total_velocity_per_run.append(agent.velocity.x)                    
+                            # log distance travelled in ACTION_RESET_TIME at current velocity
+                            total_distance_per_run.append(agent.velocity.x * ACTION_RESET_TIME)
+
+                            if run_count == TOTAL_RUNS-1:
+                                position_tracker[0].append(agent.id)
+                                position_tracker[1].append(continuous_time)
+                                position_tracker[2].append(agent.position.x)
+                                position_tracker[3].append(agent.position.y)
+
+                        log_timer = 0.0
+
+                    sorted_agents = sorted(all_agents, key=lambda x: x.position.x, reverse=True)
+                    reference_car = sorted_agents[0]
+
+                    # generate new obstacles
+                    if inf_obstacles:
+                        for obstacle in all_coming_cars:
+                            if obstacle.position.x < -CAR_WIDTH/32:
+                                # remove old obstacle
+                                all_coming_cars.remove(obstacle)
+                                all_obstacles.remove(obstacle)
+                                # obstacle_lanes.remove(obstacle.lane_id)
+
+                                # add new obstacle
+                                rand_pos_x = float(randrange(70, 80))
+                                rand_pos_y = NEW_LANES[obstacle.lane_id-1]
+                                rand_vel_x = float(randrange(5, 15))
+                                rand_lane_id = obstacle.lane_id
+
+                                new_obstacle = Obstacle(id=randrange(100,1000), x=rand_pos_x, y=rand_pos_y, vel_x=rand_vel_x, vel_y=0.0, lane_id=rand_lane_id, color=YELLOW)
+                                all_coming_cars.add(new_obstacle)
+                                all_obstacles.add(new_obstacle)
+
+                    # Drawing
+                    self.screen.fill((0, 0, 0))
+                    
+                    #Draw The Scrolling Road
+                    rel_x = bkgd_x % bkgd.get_rect().width
+                    self.screen.blit(bkgd, (rel_x - bkgd.get_rect().width, 0))
+                    if rel_x < WIDTH:
+                        self.screen.blit(bkgd, (rel_x, 0))
+                    bkgd_x -= reference_car.velocity.x
+                    # bkgd_x -= 1
+                    # pygame.draw.line(self.screen, (255, 0, 0), (rel_x, 0), (rel_x, HEIGHT), 3)
 
 
-            # update the agent sprites
-            self.updateSprites(all_agents)
-            # update obstacle sprites
-            self.updateSprites(all_coming_cars)
+                    # update the agent sprites
+                    self.updateSprites(all_agents)
+                    # update obstacle sprites
+                    self.updateSprites(all_coming_cars)
 
-            # update collision display count
-            # new_lane_pos = (LANE_WIDTH * reference_car.lane_id - (LANE_WIDTH/2))/ppu
-            self.displayScore(num_obs_collisions, num_agent_collisions)
+                    # update collision display count
+                    # new_lane_pos = (LANE_WIDTH * reference_car.lane_id - (LANE_WIDTH/2))/ppu
+                    self.displayScore(num_obs_collisions, num_agent_collisions)
 
-            # display position of car
-            self.displayPos(reference_car.velocity.x)
+                    # display position of car
+                    self.displayPos(reference_car.velocity.x)
 
-            # display selected action
-            self.displayAction(current_action)
+                    # display selected action
+                    # self.displayAction(current_action)
 
-            pygame.display.flip()
+                    pygame.display.flip()
 
-            self.clock.tick(self.ticks)
+                    collision_count_lock = False
+
+                    self.clock.tick(self.ticks)
+                    # self.clock.tick(120)
+
+                if not self.exit:
+                    # log the number of agents and the current run count
+                    data_per_run[0].append(agent_count+1)
+                    data_per_run[1].append(run_count)
+                    # total number of collisions for one run
+                    data_per_run[2].append(num_obs_collisions)
+                    data_per_run[3].append(num_agent_collisions)
+                    # average velocity and distance across one run
+                    data_per_run[4].append(sum(total_velocity_per_run) / float(len(total_velocity_per_run)))
+                    data_per_run[5].append(sum(total_distance_per_run) / float(len(total_distance_per_run)))
+
+            # log data across multiple runs and agents
+            all_data[0].extend(data_per_run[0])
+            all_data[1].extend(data_per_run[1])
+            all_data[2].extend(data_per_run[2])
+            all_data[3].extend(data_per_run[3])
+            all_data[4].extend(data_per_run[4])
+            all_data[5].extend(data_per_run[5])
+
+            # save backups for each agent count in case of unexpected termination
+            if not self.exit and is_data_saved:
+                np_data_backup = numpy.array(data_per_run)
+                np_data_backup = numpy.transpose(np_data_backup)
+                np_data_backup_df = pd.DataFrame(np_data_backup, columns = df_columns)
+                np_data_backup_df.to_csv(backup_file_name, index=False)
+
+                # save position data for last run
+                np_pos_data = numpy.array(position_tracker)
+                np_pos_data = numpy.transpose(np_pos_data)
+                np_pos_data_df = pd.DataFrame(np_pos_data, columns = position_columns)
+                np_pos_data_df.to_csv(position_file_name, index=False)
+                
+
+        if not self.exit and is_data_saved:
+            np_data_per_run = numpy.array(all_data)
+            np_data_per_run = numpy.transpose(np_data_per_run)
+
+            np_data_per_run_df = pd.DataFrame(np_data_per_run, columns = df_columns)
+            np_data_per_run_df.to_csv(file_name, index=False)
+
         pygame.quit()
 
     def initObjects(self, data_point):
@@ -736,17 +849,21 @@ if __name__ == '__main__':
 
     # ngsim_data = loadNgsimData()
 
-    obstacle_1 = {'id':100, 'x':20, 'y':LANE_1_C, 'vel_x':13.0, 'lane_id':1, 'color':YELLOW}
-    obstacle_2 = {'id':101, 'x':25, 'y':LANE_2_C, 'vel_x':12.0, 'lane_id':2, 'color':YELLOW}
-    obstacle_3 = {'id':102, 'x':40, 'y':LANE_3_C, 'vel_x':10.0, 'lane_id':3, 'color':YELLOW}
+    # obstacle_1 = {'id':100, 'x':20, 'y':LANE_1_C, 'vel_x':13.0, 'lane_id':1, 'color':YELLOW}
+    # obstacle_2 = {'id':101, 'x':25, 'y':LANE_2_C, 'vel_x':12.0, 'lane_id':2, 'color':YELLOW}
+    # obstacle_3 = {'id':102, 'x':40, 'y':LANE_3_C, 'vel_x':10.0, 'lane_id':3, 'color':YELLOW}
+
+    obstacle_1 = {'id':100, 'x':-20, 'y':LANE_1_C, 'vel_x':13.0, 'lane_id':1, 'color':YELLOW}
+    obstacle_2 = {'id':101, 'x':-25, 'y':LANE_2_C, 'vel_x':12.0, 'lane_id':2, 'color':YELLOW}
+    obstacle_3 = {'id':102, 'x':-40, 'y':LANE_3_C, 'vel_x':10.0, 'lane_id':3, 'color':YELLOW}
     obstacle_list = [obstacle_1, obstacle_2, obstacle_3]
 
     car_1 = {'id':0, 'x':20, 'y':LANE_2_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':2}
     car_2 = {'id':1, 'x':5, 'y':LANE_1_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':1}
     car_3 = {'id':2, 'x':5, 'y':LANE_2_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':2}
-    # car_4 = {'id':3, 'x':20, 'y':LANE_3_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':3}
-    # car_5 = {'id':4, 'x':5, 'y':LANE_3_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':3}
-    cars_list = [car_1, car_2, car_3]
+    car_4 = {'id':3, 'x':20, 'y':LANE_3_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':3}
+    car_5 = {'id':4, 'x':5, 'y':LANE_3_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':3}
+    cars_list = [car_1, car_2, car_3, car_4, car_5]
     # cars_list = [car_1]
 
     # run a human controlled game
