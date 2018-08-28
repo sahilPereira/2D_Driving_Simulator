@@ -19,7 +19,6 @@ PURPLE = (255, 0, 255)
 
 WIDTH = 1900
 HEIGHT = 240
-# HEIGHT = 720
 NUM_LANES = 3
 LANE_WIDTH = int(HEIGHT/NUM_LANES)
 ACTION_RESET_TIME = 0.25 # time till next action
@@ -51,9 +50,6 @@ class Car(pygame.sprite.Sprite):
  
         # Draw the car (a rectangle!)
         pygame.draw.rect(self.image, color, [0, 0, CAR_WIDTH, CAR_HEIGHT])
-        
-        # Instead we could load a proper pciture of a car...
-        # self.image = pygame.image.load("car.png").convert_alpha()
  
         # Fetch the rectangle object that has the dimensions of the image.
         self.rect = self.image.get_rect()
@@ -70,6 +66,8 @@ class Car(pygame.sprite.Sprite):
 
         self.acceleration = 0.0
         self.steering = 0.0
+
+        self.angular_velocity = 0.0
 
         self.lane_id = lane_id
 
@@ -111,9 +109,9 @@ class Car(pygame.sprite.Sprite):
 
         if self.steering:
             turning_radius = self.length / tan(radians(self.steering))
-            angular_velocity = self.velocity.x / turning_radius
+            self.angular_velocity = self.velocity.x / turning_radius
         else:
-            angular_velocity = 0
+            self.angular_velocity = 0
 
         self.position += self.velocity.rotate(-self.angle) * dt
         # self.angle += degrees(angular_velocity) * dt
@@ -129,7 +127,6 @@ class Car(pygame.sprite.Sprite):
 
         self.velocity += (self.acceleration * dt, 0)
         self.velocity.x = max(0.0, min(self.velocity.x, self.max_velocity))
-        # self.velocity.x = max(-self.max_velocity, min(self.velocity.x, self.max_velocity))
 
         # trigger movement
         new_lane_pos = (LANE_WIDTH * self.lane_id - (LANE_WIDTH/2))/ppu
@@ -141,12 +138,12 @@ class Car(pygame.sprite.Sprite):
 
         if self.steering:
             turning_radius = self.length / tan(radians(self.steering))
-            angular_velocity = self.velocity.x / turning_radius
+            self.angular_velocity = self.velocity.x / turning_radius
         else:
-            angular_velocity = 0
+            self.angular_velocity = 0
 
         self.position += self.velocity.rotate(-self.angle) * dt
-        self.position.y -= degrees(angular_velocity) * dt * dt
+        self.position.y -= degrees(self.angular_velocity) * dt * dt
 
         if self.id == s_leader.id:
             self.position.x = 10
@@ -158,9 +155,6 @@ class Car(pygame.sprite.Sprite):
             self.position.y = max(self.position.y, int((CAR_HEIGHT/2)/ppu))
         elif self.position.y > int((HEIGHT - int(CAR_HEIGHT/2))/ppu):
             self.position.y = min(self.position.y, int((HEIGHT - int((CAR_HEIGHT/2)/ppu))/ppu))
-
-        # DEBUG: commented out the angle update
-        # self.angle += degrees(angular_velocity) * dt
 
         # update rect for collision detection
         self.rect.x = self.position.x * ppu - self.rect.width / 2
@@ -230,9 +224,6 @@ class Obstacle(pygame.sprite.Sprite):
  
         # Draw the car (a rectangle!)
         pygame.draw.rect(self.image, color, [0, 0, CAR_WIDTH, CAR_HEIGHT])
-        
-        # Instead we could load a proper pciture of a car...
-        # self.image = pygame.image.load("car.png").convert_alpha()
  
         # Fetch the rectangle object that has the dimensions of the image.
         self.rect = self.image.get_rect()
@@ -423,11 +414,11 @@ class Game:
         bkgd_x = 0
 
         TOTAL_AGENTS = 5
-        TOTAL_RUNS = 10
-        RUN_DURATION = 120 # 60 seconds
+        TOTAL_RUNS = 100
+        RUN_DURATION = 60 # 60 seconds
 
-        files_dir = 'datafiles/NoDelay/'
-        # file_name = files_dir+'model_IGA_%d_%d_%d.csv'%(TOTAL_AGENTS, TOTAL_RUNS, RUN_DURATION)
+        files_dir = 'datafiles/NoDelay/dt_0.05/'
+        file_name = files_dir+'model_IGA_0.05_%d_%d_%d.csv'%(TOTAL_AGENTS, TOTAL_RUNS, RUN_DURATION)
 
         df_columns = ['agent_count','run_count','obs_collisions','agent_collisions', 'avg_velocity', 'avg_distance']
         position_columns = ['agent_id','time','pos_x','pos_y']
@@ -441,8 +432,8 @@ class Game:
             data_per_run = [[] for x in range(6)]
             position_tracker = [[] for x in range(4)]
 
-            # backup_file_name = files_dir+'backup_IGA_%d_%d_%d.csv'%(agent_count+1, TOTAL_RUNS, RUN_DURATION)
-            # position_file_name = files_dir+'pos_IGA_%d_%d.csv'%(agent_count+1, RUN_DURATION)
+            backup_file_name = files_dir+'backup_IGA_0.05_%d_%d_%d.csv'%(agent_count+1, TOTAL_RUNS, RUN_DURATION)
+            position_file_name = files_dir+'pos_IGA_0.05_%d_%d.csv'%(agent_count+1, RUN_DURATION)
 
             for run_count in range(TOTAL_RUNS):
                 # Stackelberg controller
@@ -453,8 +444,8 @@ class Game:
                 all_coming_cars = pygame.sprite.Group()
 
                 reference_car = None
-                # for data in cars_list[:agent_count+1]:
-                for data in cars_list[:3]:
+                for data in cars_list[:agent_count+1]:
+                # for data in cars_list[:3]:
                     new_car = Car(id=data['id'], x=data['x'], y=data['y'], vel_x=data['vel_x'], vel_y=data['vel_y'], lane_id=data['lane_id'])
                     all_agents.add(new_car)
                     all_obstacles.add(new_car)
@@ -484,8 +475,8 @@ class Game:
 
                 # while not self.exit:
                 while run_time <= RUN_DURATION and not self.exit:
-                    dt = self.clock.get_time() / 1000
-                    # dt = self.clock.get_fps() / 1000
+                    # dt = self.clock.get_time() / 1000
+                    dt = 50.0/1000.0
                     
                     # pause game when needed
                     for e in pygame.event.get():
@@ -604,8 +595,8 @@ class Game:
 
                     collision_count_lock = False
 
-                    self.clock.tick(self.ticks)
-                    # self.clock.tick(120)
+                    # self.clock.tick(self.ticks)
+                    self.clock.tick()
 
                 if not self.exit:
                     # log the number of agents and the current run count
@@ -695,8 +686,8 @@ class Game:
         return data_df
 
     def runNgsim(self, ngsim_data):
-
-        testing_sets = random.sample(range(len(ngsim_data)), 10)
+        random.seed(2018)
+        testing_sets = random.sample(range(len(ngsim_data)), 100)
         print(testing_sets)
 
         # Stackelberg controller
@@ -718,18 +709,20 @@ class Game:
             # errors for x, y, vx, vy
             errors = [[] for x in range(4)]
 
-            for i in range(1, data_df.shape[0]):
-            # for i in range(5, data_df.shape[0], 5):
+            # for i in range(1, data_df.shape[0]):
+            for i in range(10, data_df.shape[0], 10):
                 
                 # Step 3: get action for ego and project it 0.1s into future
                 selected_action = s_controller.selectAction(ego_car, all_obstacles)
 
                 # select action using Stackelberg game
-                # selected_action = s_controller.selectStackelbergAction(leader, all_obstacles, reference_car)
+                # s_controller.playerSets[ego_car] = [ego_car]
+                # selected_action = s_controller.selectStackelbergAction(ego_car, all_obstacles, ego_car)
 
                 # TODO: test commenting this section out
                 self.executeAction(selected_action, ego_car, all_obstacles)
-                ego_car.updateNgsim(NGSIM_RESET_TIME)
+                # ego_car.updateNgsim(NGSIM_RESET_TIME)
+                ego_car.updateNgsim(1.0)
 
                 # Step 4: check state of ego with current sample
                 new_ego_car, all_coming_cars = self.initObjects(data_df.loc[i])
@@ -739,8 +732,8 @@ class Game:
                 # Step 5: save error for x, y, vx, vy
                 errors[0].append(abs(ego_car.position.x - new_ego_car.position.x)/abs(new_ego_car.position.x))
                 errors[1].append(abs(ego_car.position.y - new_ego_car.position.y)/abs(new_ego_car.position.y))
-                errors[2].append(abs(ego_car.velocity.x - new_ego_car.velocity.x)/abs(new_ego_car.velocity.x))
-                errors[3].append(abs(ego_car.velocity.y - new_ego_car.velocity.y)/abs(new_ego_car.velocity.y))
+                errors[2].append(abs(ego_car.velocity.x - new_ego_car.velocity.x)/max(abs(new_ego_car.velocity.x),1.0))
+                errors[3].append(abs(ego_car.angular_velocity - new_ego_car.velocity.y)/max(abs(new_ego_car.velocity.y),1.0))
 
                 # reset ego_car for next sample
                 ego_car = new_ego_car
@@ -755,81 +748,9 @@ class Game:
         np_set_errors = numpy.transpose(np_set_errors)
 
         np_set_errors_df = pd.DataFrame(np_set_errors, columns = ['e_x','e_y','e_vx','e_vy'])
-        np_set_errors_df.to_csv('ngsim_errors_0.1.csv', index=False)
-        
-        # for error in set_errors:
-        #     percent_error = [i * 100 for i in error]
-        #     print(percent_error)
+        np_set_errors_df.to_csv('ngsim_errors_GIA_AV_1.0.csv', index=False)
 
-# Normalize all data to be between 0-1
-def normalizeData():
-
-    with open('features_test_0.data', 'rb') as file:
-        features = pickle.load(file, encoding='latin1')
-
-    # Indices of spatial data that needs to have its magnitude reduced.
-    indices = numpy.concatenate([numpy.arange(0, 4), numpy.arange(5, 9), numpy.arange(11, 15), \
-        numpy.arange(17, 21), numpy.arange(23, 27), numpy.arange(29, 33), numpy.arange(35, 39), \
-        numpy.arange(41, 45), numpy.arange(47, 51), numpy.arange(53, 57)]).ravel()
-
-    newData = features[:, :, indices]
-    new_df = pd.DataFrame(newData[20])
-
-    # Convert relative values to absolute values
-    abs_new = new_df.copy()
-
-    relative_idx = numpy.concatenate([numpy.arange(5, 8), numpy.arange(9, 12), \
-        numpy.arange(13, 16), numpy.arange(17, 20), numpy.arange(21, 24), numpy.arange(25, 28), \
-        numpy.arange(29, 32), numpy.arange(33, 36), numpy.arange(37, 40)]).ravel()
-
-    for i in range(0, len(relative_idx), 3):
-        abs_new.loc[:,relative_idx[i]] = abs_new.loc[:,3]-abs_new.loc[:,relative_idx[i]]
-        abs_new.loc[:,relative_idx[i]+1] = abs_new.loc[:,relative_idx[i]+1] + abs_new.loc[:,0]
-        abs_new.loc[:,relative_idx[i]+2] = abs_new.loc[:,relative_idx[i]+2] + abs_new.loc[:,1]
-
-    # Normalize x (lateral) positions
-    x_idx = [0] + list(range(6,40,4))
-    max_x_vals = abs_new.loc[:,x_idx].max()
-    max_x = max_x_vals.max()
-    abs_new.loc[:,x_idx] = abs_new.loc[:,x_idx]/max_x
-
-    # Normalize y (longitudinal) positions
-    y_idx = [1] + list(range(7,40,4))
-    max_y_vals = abs_new.loc[:,y_idx].max()
-    max_y = max_y_vals.max()
-    abs_new.loc[:,y_idx] = abs_new.loc[:,y_idx]/max_y
-
-    # Normalize vx (lateral) velocity
-    vx_idx = [2] + list(range(4,40,4))
-    abs_vx_vals = abs_new.loc[:,vx_idx].abs().max()
-    max_vx = abs_vx_vals.max()
-    # abs_new.loc[:,vx_idx] = abs_new.loc[:,vx_idx]/max_vx
-    abs_new.loc[:,vx_idx] = abs_new.loc[:,vx_idx]/2
-
-    # # Normalize vy (longitudinal) velocity
-    vy_idx = [3] + list(range(5,40,4))
-    abs_vy_vals = abs_new.loc[:,vy_idx].abs().max()
-    max_vy = abs_vy_vals.max()
-    # abs_new.loc[:,vy_idx] = abs_new.loc[:,vy_idx]/max_vy
-    abs_new.loc[:,vy_idx] = abs_new.loc[:,vy_idx]/5
-
-    new_data_df = abs_new.copy()
-    # Scale x (lateral) position
-    new_data_df.loc[:,x_idx] = new_data_df.loc[:,x_idx]*((HEIGHT-LANE_WIDTH)/ppu) + (LANE_WIDTH/2/ppu)
-
-    # Scale y (longitudinal) position
-    new_data_df.loc[:,y_idx] = new_data_df.loc[:,y_idx]*(WIDTH/ppu)
-
-    # Set ego vehicle position to 10 and align all other vehicles
-    aligned_df = new_data_df.copy()
-    diff_x = 10 - aligned_df.loc[:,1]
-
-    for i in y_idx:
-        aligned_df.loc[:,i] = aligned_df.loc[:,i] + diff_x
-
-    return aligned_df
-
-
+# Load only the features required for evaluation
 def loadNgsimData():
 
     features = None
@@ -849,10 +770,6 @@ if __name__ == '__main__':
 
     # ngsim_data = loadNgsimData()
 
-    # obstacle_1 = {'id':100, 'x':20, 'y':LANE_1_C, 'vel_x':13.0, 'lane_id':1, 'color':YELLOW}
-    # obstacle_2 = {'id':101, 'x':25, 'y':LANE_2_C, 'vel_x':12.0, 'lane_id':2, 'color':YELLOW}
-    # obstacle_3 = {'id':102, 'x':40, 'y':LANE_3_C, 'vel_x':10.0, 'lane_id':3, 'color':YELLOW}
-
     obstacle_1 = {'id':100, 'x':-20, 'y':LANE_1_C, 'vel_x':13.0, 'lane_id':1, 'color':YELLOW}
     obstacle_2 = {'id':101, 'x':-25, 'y':LANE_2_C, 'vel_x':12.0, 'lane_id':2, 'color':YELLOW}
     obstacle_3 = {'id':102, 'x':-40, 'y':LANE_3_C, 'vel_x':10.0, 'lane_id':3, 'color':YELLOW}
@@ -864,8 +781,7 @@ if __name__ == '__main__':
     car_4 = {'id':3, 'x':20, 'y':LANE_3_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':3}
     car_5 = {'id':4, 'x':5, 'y':LANE_3_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':3}
     cars_list = [car_1, car_2, car_3, car_4, car_5]
-    # cars_list = [car_1]
 
     # run a human controlled game
-    game.run(cars_list, obstacle_list, True, True)
+    game.run(cars_list, obstacle_list, True, True, True)
     # game.runNgsim(ngsim_data)

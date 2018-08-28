@@ -157,22 +157,6 @@ class StackelbergPlayer():
             mut_agents = [obstacle_copy for obstacle_copy in state_buffer[0] if obstacle_copy.id in p_ids]
             mut_agents = self.sortByPosition(mut_agents)
 
-        # TODO: remove after testing
-        # ------------------------------------------------------------------
-        # if s_players_copy[0] == mut_agents[0]:
-        #     print("Leaders from copy and original are the same")
-        # else:
-        #     print("Copies are different")
-
-        # # s_players_copy[0].position.x = 1000
-        # same_pos = s_players_copy[0].position.x == mut_agents[0].position.x
-        # same_pos &= s_players_copy[0].velocity.x == mut_agents[0].velocity.x
-        # if same_pos:
-        #     print("Still linked by reference")
-        # else:
-        #     print("Not linked, an actual copy")
-        # ------------------------------------------------------------------
-
         # print(p1_best_action.name)
         return p1_best_action
 
@@ -250,37 +234,37 @@ class StackelbergPlayer():
         sorted_agents = self.sortByPosition(all_agents)
         
         # 2. select top agent as leader and add to leader/follower list
-        # while sorted_agents:
-        #     leader = sorted_agents.pop(0)
+        while sorted_agents:
+            leader = sorted_agents.pop(0)
 
-        #     # get the followers for this leader
-        #     all_players = self.pickPlayers(leader, all_agents, all_obstacles)
+            # get the followers for this leader
+            all_players = self.pickPlayers(leader, all_agents, all_obstacles)
 
-        #     # 3. add the leaders and followers to the players list of sets
-        #     for idx, agent in enumerate(all_players):
-        #         self.players[idx].add(agent)
+            # 3. add the leaders and followers to the players list of sets
+            for idx, agent in enumerate(all_players):
+                self.players[idx].add(agent)
 
-        #     # 4. remove all these from the original sorted list
-        #     sorted_agents = [agent for agent in sorted_agents if agent not in all_players]        
+            # 4. remove all these from the original sorted list
+            sorted_agents = [agent for agent in sorted_agents if agent not in all_players]        
         
-        # leader_list = self.players[0]
+        leader_list = self.players[0]
 
         # save player sets for each leader
         # TODO: testing making everyone a leader
-        # for leader in leader_list:
-        for leader in sorted_agents:
+        for leader in leader_list:
+        # for leader in sorted_agents:
             # get the followers for this leader
             all_players = self.pickPlayers(leader, all_agents, all_obstacles)
             self.playerSets[leader] = all_players
 
         # update players for next turn
         # TODO: commented this out for testing, undo if new idea doesnt work
-        # self.updatePlayersList()
+        self.updatePlayersList()
 
         # return the leaders
         # TODO: testing using all agents as leaders
-        # return leader_list
-        return sorted_agents
+        return leader_list
+        # return sorted_agents
 
     # remove current leaders and make first followers the new leaders
     # TODO: might want to make this into a queue datastructure
@@ -381,52 +365,9 @@ class StackelbergPlayer():
                     ideal_distance = min(tmp_val, ideal_distance)
         return ideal_distance
 
-    # def positiveUtility(self, ego, intended_lane, intended_velocity, all_obstacles):
-    #     # max visible distance
-    #     # ideal_velocity = VISIBLE_DIST + ego.max_velocity
-    #     ideal_velocity = ego.max_velocity
-
-    #     for obstacle in all_obstacles:
-    #         if obstacle == ego:
-    #             continue
-    #         if obstacle.lane_id == intended_lane:
-    #             dx = obstacle.position.x - ego.position.x
-    #             # dx = (obstacle.position.x - (obstacle.rect[2]/64)) - (ego.position.x + (ego.rect[2]/64)) - COMFORT_LVL
-
-    #             # only consider vehicles ahead of ego vehicle
-    #             if dx >= 0:
-    #                 # calculate actual difference between cars
-    #                 dx = abs(obstacle.position.x - ego.position.x) - (ego.rect[2]/32) - self.car_width
-
-    #                 # TODO: try adding difference in lateral positions
-    #                 dy = 0.0
-    #                 # dy = abs(obstacle.position.y - ego.position.y)
-    #                 # dy = LANE_DIFF/32 if dx > ego.rect[2]/32 else dy
-
-    #                 stopping_dist = self.stoppingDist(ego, intended_velocity)
-    #                 tmp_val = intended_velocity + min(dx - stopping_dist, 0)
-    #                 # tmp_val = dx + intended_velocity + min(dx - stopping_dist, 0)
-    #                 # tmp_val = dx + ego.velocity.x + min(dx - stopping_dist, 0)
-
-    #                 ideal_velocity = min(tmp_val, ideal_velocity) + dy
-    #                 # ideal_velocity = min(tmp_val, VISIBLE_DIST + ideal_velocity)
-    #     return ideal_velocity
-
     # compute stopping distance for ego vehicle
     def stoppingDist(self, ego, intended_velocity):
         return 0.5*(intended_velocity ** 2)/ego.max_acceleration
-
-    # TODO: start with the simple positive utility
-    def positiveUtility_old(self, ego, intended_lane, all_obstacles):
-        # max visible distance
-        obstacle_dist = VISIBLE_DIST
-        for obstacle in all_obstacles:
-            if obstacle.lane_id == intended_lane:
-                dx = obstacle.position.x - ego.position.x
-                # only consider vehicles ahead of ego vehicle
-                if dx > 0:
-                    obstacle_dist = min(dx, obstacle_dist)
-        return obstacle_dist
 
     def negativeUtility(self, ego, intended_lane, intended_velocity, all_obstacles):
         neg_utility = None
