@@ -250,37 +250,37 @@ class StackelbergPlayer():
         sorted_agents = self.sortByPosition(all_agents)
         
         # 2. select top agent as leader and add to leader/follower list
-        # while sorted_agents:
-        #     leader = sorted_agents.pop(0)
+        while sorted_agents:
+            leader = sorted_agents.pop(0)
 
-        #     # get the followers for this leader
-        #     all_players = self.pickPlayers(leader, all_agents, all_obstacles)
+            # get the followers for this leader
+            all_players = self.pickPlayers(leader, all_agents, all_obstacles)
 
-        #     # 3. add the leaders and followers to the players list of sets
-        #     for idx, agent in enumerate(all_players):
-        #         self.players[idx].add(agent)
+            # 3. add the leaders and followers to the players list of sets
+            for idx, agent in enumerate(all_players):
+                self.players[idx].add(agent)
 
-        #     # 4. remove all these from the original sorted list
-        #     sorted_agents = [agent for agent in sorted_agents if agent not in all_players]        
+            # 4. remove all these from the original sorted list
+            sorted_agents = [agent for agent in sorted_agents if agent not in all_players]        
         
-        # leader_list = self.players[0]
+        leader_list = self.players[0]
 
         # save player sets for each leader
         # TODO: testing making everyone a leader
-        # for leader in leader_list:
-        for leader in sorted_agents:
+        for leader in leader_list:
+        # for leader in sorted_agents:
             # get the followers for this leader
             all_players = self.pickPlayers(leader, all_agents, all_obstacles)
             self.playerSets[leader] = all_players
 
         # update players for next turn
         # TODO: commented this out for testing, undo if new idea doesnt work
-        # self.updatePlayersList()
+        self.updatePlayersList()
 
         # return the leaders
         # TODO: testing using all agents as leaders
-        # return leader_list
-        return sorted_agents
+        return leader_list
+        # return sorted_agents
 
     # remove current leaders and make first followers the new leaders
     # TODO: might want to make this into a queue datastructure
