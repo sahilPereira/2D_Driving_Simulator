@@ -9,6 +9,7 @@ import math
 import numpy
 import pandas as pd
 import pickle
+from argparse import ArgumentParser
 
 WHITE = (255, 255, 255)
 GREEN = (0, 255, 0)
@@ -407,7 +408,7 @@ class Game:
         car.left_mode = True
         car.right_mode = False
 
-    def run(self, cars_list, obstacle_list, is_Stackelberg=False, inf_obstacles=False, is_data_saved=False):
+    def run(self, cars_list, obstacle_list, is_manual=False, inf_obstacles=False, is_data_saved=False):
 
         bkgd = pygame.image.load('roadImg.png').convert()
         bkgd = pygame.transform.scale(bkgd, (WIDTH, HEIGHT))
@@ -437,7 +438,7 @@ class Game:
 
             for run_count in range(TOTAL_RUNS):
                 # Stackelberg controller
-                s_controller = SCP.StackelbergPlayer(CAR_WIDTH) if is_Stackelberg else None
+                s_controller = SCP.StackelbergPlayer(CAR_WIDTH) if not is_manual else None
 
                 all_agents = pygame.sprite.Group()
                 all_obstacles = pygame.sprite.Group()
@@ -475,8 +476,8 @@ class Game:
 
                 # while not self.exit:
                 while run_time <= RUN_DURATION and not self.exit:
-                    # dt = self.clock.get_time() / 1000
-                    dt = 50.0/1000.0
+                    dt = self.clock.get_time() / 1000
+                    # dt = 50.0/1000.0
                     
                     # pause game when needed
                     for e in pygame.event.get():
@@ -501,7 +502,7 @@ class Game:
                         if event.type == pygame.QUIT:
                             self.exit = True
 
-                    if not is_Stackelberg:
+                    if is_manual:
                         self.manualControl(reference_car, all_obstacles)
                     else:
                         if action_timer >= ACTION_RESET_TIME:
@@ -595,8 +596,8 @@ class Game:
 
                     collision_count_lock = False
 
-                    # self.clock.tick(self.ticks)
-                    self.clock.tick()
+                    self.clock.tick(self.ticks)
+                    # self.clock.tick()
 
                 if not self.exit:
                     # log the number of agents and the current run count
@@ -766,10 +767,16 @@ def loadNgsimData():
     return filteredData
 
 if __name__ == '__main__':
-    game = Game()
 
-    # ngsim_data = loadNgsimData()
+    # parse arguments
+    parser = ArgumentParser()
+    parser.add_argument("--manual", dest="manual", action='store_true', help="use manual driving mode; default is using Stackelberg driving model")
+    parser.add_argument("--inf_obs", dest="inf_obs", action='store_true', help="produce new obstacle on a lane when current obstacle is out of window")
+    parser.add_argument("--save", dest="save_data", action='store_true', help="save performance metrics")
 
+    args = parser.parse_args()
+
+    # initial positions of obstacles and agents
     obstacle_1 = {'id':100, 'x':-20, 'y':LANE_1_C, 'vel_x':13.0, 'lane_id':1, 'color':YELLOW}
     obstacle_2 = {'id':101, 'x':-25, 'y':LANE_2_C, 'vel_x':12.0, 'lane_id':2, 'color':YELLOW}
     obstacle_3 = {'id':102, 'x':-40, 'y':LANE_3_C, 'vel_x':10.0, 'lane_id':3, 'color':YELLOW}
@@ -782,6 +789,6 @@ if __name__ == '__main__':
     car_5 = {'id':4, 'x':5, 'y':LANE_3_C, 'vel_x':10.0, 'vel_y':0.0, 'lane_id':3}
     cars_list = [car_1, car_2, car_3, car_4, car_5]
 
-    # run a human controlled game
-    game.run(cars_list, obstacle_list, True, True, True)
-    # game.runNgsim(ngsim_data)
+    game = Game()
+    # run the simulation
+    game.run(cars_list, obstacle_list, args.manual, args.inf_obs, args.save_data)
